@@ -1,0 +1,56 @@
+{
+  "name": "@hulihan97/message-reporting",
+  "version": "0.2.0",
+  "description": "Lightweight browser SDK for manual JSON reporting.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "unpkg": "dist/index.global.js",
+  "jsdelivr": "dist/index.global.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "sdk",
+    "reporting",
+    "browser",
+    "typescript",
+    "beacon",
+    "fetch"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.ts\"",
+    "lint:fix": "npm run lint -- --fix",
+    "format": "prettier --check \"src/**/*.ts\" \"tests/**/*.mjs\" \"*.cjs\"",
+    "format:write": "prettier --write \"src/**/*.ts\" \"tests/**/*.mjs\" \"*.cjs\"",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "check": "npm run typecheck && npm run lint && npm run format && npm test",
+    "precommit": "npm run lint && npm run format",
+    "prepare": "husky",
+    "prepublishOnly": "npm run check",
+    "release": "npm publish --access public",
+    "registry:official": "npm config set registry https://registry.npmjs.org/",
+    "registry:mirror": "npm config set registry https://registry.npmmirror.com/"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "prettier": "^3.6.2",
+    "tsup": "^8.3.5",
+    "typescript": "5.5.4"
+  }
+}

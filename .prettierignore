@@ -1,0 +1,24 @@
+# Git Hooks 目录（脚本按原样维护）
+.husky/
+# 构建产物
+dist/
+# 文档产出
+docs/
+# 依赖目录
+node_modules/
+# 测试目录
+test/
+# 静态资源文件
+*.png
+*.svg
+# 仓库配置与元信息
+.gitignore
+.npmrc
+.prettierignore
+.eslintignore
+browserslist
+LICENSE
+# lock 与 package 文件通常不由 Prettier 处理
+package*.json
+# 预留工作区目录
+workspace/
