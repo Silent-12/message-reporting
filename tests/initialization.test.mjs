@@ -40,7 +40,7 @@ test('ESM、CJS 和 IIFE 只公开初始化与停止能力', async () => {
   }
 })
 
-test('签发并持久化 CID 后查询准入，停止后复用并保留路径前缀', async () => {
+test('签发并持久化 CID 后查询上报策略，停止后复用并保留路径前缀', async () => {
   const entries = setup()
   const requests = []
   globalThis.fetch = async (url, options) => {
@@ -58,7 +58,7 @@ test('签发并持久化 CID 后查询准入，停止后复用并保留路径前
   assert.equal(requests.length, 3)
 })
 
-test('不同应用隔离、拒绝准入和参数校验', async () => {
+test('不同应用隔离、禁止上报和参数校验', async () => {
   const entries = setup()
   globalThis.fetch = async (url) => (url.endsWith('/cids') ? envelope({ cid }) : envelope({ allowed: false }))
   assert.deepEqual(await sdk.init(opts), { status: 'denied' })
@@ -202,7 +202,7 @@ test('单次请求 5 秒超时后继续重试，迟到响应不能被采用', as
   }
 })
 
-test('真实本地 HTTP 接收器完成签发和准入请求', async () => {
+test('真实本地 HTTP 接收器完成签发和上报策略请求', async () => {
   const entries = setup()
   globalThis.fetch = nativeFetch
   const calls = []

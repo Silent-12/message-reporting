@@ -38,7 +38,7 @@ let operation: Promise<InitResult> | undefined
 let controller: AbortController | undefined
 // 初始化代次；新初始化与 stop 递增，用于丢弃迟到响应。
 let generation = 0
-// 准入是否已明确允许；仅该值为 true 时可上报事件。
+// 上报策略是否已明确允许上报；仅该值为 true 时可上报事件。
 let allowed = false
 
 /**
@@ -203,9 +203,9 @@ function toFailureResult(reply: HttpReply): InitResult {
 }
 
 /**
- * 检查运行环境并完成 CID 签发与准入查询
+ * 检查运行环境并完成 CID 签发与上报策略查询
  * @description 先确认协议所需能力与可读写持久存储，再按服务地址与应用隔离读取或签发 CID，
- * 写入后可重新读取才继续查询准入；停止信号或代次变化时返回 stopped，且不写入任何状态
+ * 写入后可重新读取才继续查询上报策略；停止信号或代次变化时返回 stopped，且不写入任何状态
  * @param config 规范化后的初始化目标
  * @param signal 本次初始化的停止信号
  * @param id 本次初始化的代次
@@ -267,10 +267,10 @@ async function initialize(config: Config, signal: AbortSignal, id: number): Prom
 
 /**
  * 初始化 SDK
- * @description 校验配置后签发或复用 CID 并查询准入；同一监控目标的并发调用共用一次初始化，
+ * @description 校验配置后签发或复用 CID 并查询上报策略；同一监控目标的并发调用共用一次初始化，
  * 已允许后的重复调用复用允许状态并更新上下文回调，不同监控目标返回冲突
  * @param options 上报服务地址、应用标识与可选的上下文回调
- * @returns 准入状态或失败原因
+ * @returns 根据上报策略判定的允许状态或失败原因
  */
 export function init(options: InitOptions): Promise<InitResult> {
   const config = normalize(options)
@@ -305,7 +305,7 @@ export function init(options: InitOptions): Promise<InitResult> {
 
 /**
  * 停止初始化
- * @description 递增代次并中止进行中的请求，丢弃迟到的响应结果，同时清除准入状态
+ * @description 递增代次并中止进行中的请求，丢弃迟到的响应结果，同时清除上报允许状态
  */
 export function stop(): void {
   generation++

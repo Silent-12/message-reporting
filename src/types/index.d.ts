@@ -13,7 +13,7 @@ export interface InitOptions {
 
 /**
  * 初始化结果
- * @description 表示准入状态或初始化失败原因，不包含 CID。
+ * @description 表示根据上报策略判定的允许状态或初始化失败原因，不包含 CID。
  */
 export interface InitResult {
   // allowed、denied、invalid_config、unavailable、failed、conflict 或 stopped
