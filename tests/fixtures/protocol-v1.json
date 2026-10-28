@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "notice": "公开测试值；固定 ID、时间和 IV 仅用于离线互操作验证，禁止生产使用。两个事件故意共用 IV，以验证事件子密钥隔离。",
+  "salt": "message-reporting/v1",
+  "tagLengthBits": 128,
+  "vectors": [
+    {
+      "name": "event-1",
+      "appId": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+      "cid": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "eventId": "ICEiIyQlJicoKSorLC0uLw",
+      "sentAt": 1793145600000,
+      "iv": "MDEyMzQ1Njc4OTo7",
+      "info": "aes-256-gcm:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6:ICEiIyQlJicoKSorLC0uLw",
+      "plaintextJson": "{\"schemaVersion\":1,\"eventId\":\"ICEiIyQlJicoKSorLC0uLw\",\"appId\":\"a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6\",\"sdkVersion\":\"0.0.0-test\",\"occurredAt\":1793145599877,\"kind\":\"javascript\",\"message\":\"测试异常：支付失败 💥\",\"source\":{\"url\":\"https://example.com/assets/app.js\",\"line\":10,\"column\":5}}",
+      "keyHex": "ec394977db956f35eb365b67b6c0189e77527d28d92a97f7685bcf7595b64490",
+      "aadUtf8": "[1,\"a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6\",\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"ICEiIyQlJicoKSorLC0uLw\",1793145600000]",
+      "ciphertext": "2b4mPzujxM7UebNssdAbGdGNdGIiZuJg6leRF09OWMfSOTehjalUsniGjrRkfX9_ynAPbI4-BZocAdHVRFOb-UNlo2FFgnudiDnwNKwhqLCgy5buY5qvS8in8ePvNNC0KNHoIBNDx1asorD5jFj6PjY8KHvD6-DroSV-X5oiGnUD_q_rbwhdcLsSQBsLddLG8CWaX_ZFLBIx-q65q02EWLYUxryj43Ez6Ep-1S7bP1nkbKG6mWz6maNOpSkF8qw6v1xrVYorgvM0gAigKjYv9lfOyJuP2PFdUXa_KCVayvrL8UMbKJiNduwywBB5295YG-A1DGV7VuICaOjHa3RYKfgDwDssRc2sJEsaKVWwK_Lr5q5UJQXBEAeCBl4CAMRcSe2yUSdLnGSn3K1U9hKaE5g"
+    },
+    {
+      "name": "event-2",
+      "appId": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+      "cid": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "eventId": "QEFCQ0RFRkdISUpLTE1OTw",
+      "sentAt": 1793145600000,
+      "iv": "MDEyMzQ1Njc4OTo7",
+      "info": "aes-256-gcm:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6:QEFCQ0RFRkdISUpLTE1OTw",
+      "plaintextJson": "{\"schemaVersion\":1,\"eventId\":\"QEFCQ0RFRkdISUpLTE1OTw\",\"appId\":\"a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6\",\"sdkVersion\":\"0.0.0-test\",\"occurredAt\":1793145599877,\"kind\":\"javascript\",\"message\":\"测试异常：支付失败 💥\",\"source\":{\"url\":\"https://example.com/assets/app.js\",\"line\":10,\"column\":5}}",
+      "keyHex": "da54efce821150576f65a1b8ffa9b4b30c394e30606bb14be888d812e9410dd2",
+      "aadUtf8": "[1,\"a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6\",\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"QEFCQ0RFRkdISUpLTE1OTw\",1793145600000]",
+      "ciphertext": "TFzUwb3FAlzkZXi665Fe5tVhQImaBd7dFUajMdYwNfQ2Bqn5VPUJ-MD3AJfgJJweAL-gRLNbpPmjNDm4AVn6iem9H5jyE_gMmpPxAOqvy2EIkULfLHThf6antjZffIgIaYg0aRxbG08mI-gS92LoEor1wgzeayPISCLggqFkYI-sBWwvP3MnOIaH8XqwgDi55__szgAQNZa-jlGsK62CAxVGJtXB5ALQYlRdYkBmlMvJ-ijp1nHrAHOTC30W-mLhqUIuHRIS3ONFlWGMJpvUFNAO6ZztLuTsOWmEM_I4TQ3N_0SNua4tJ2IdX2efHk_ybNKNFiVcn2WZFFPx2HHwnLloR4w985OR346hcCErkWsLDKggbkzMyC7rzmYi535aS7jCUZxwEEAJcxmGjIarDJs"
+    }
+  ]
+}
