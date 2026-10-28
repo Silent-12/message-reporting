@@ -19,6 +19,7 @@
   },
   "include": [
     "src",
-    "tsup.config.ts"
+    "tsup.config.ts",
+    "tsup.iife.config.ts"
   ]
 }

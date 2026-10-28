@@ -1,5 +1,5 @@
 {
-  "name": "@hulihan97/message-reporting",
+  "name": "message-reporting",
   "version": "0.2.0",
   "description": "Browser SDK for error monitoring, with CID initialization and admission.",
   "license": "MIT",
@@ -9,6 +9,20 @@
   "types": "dist/index.d.ts",
   "unpkg": "dist/index.global.js",
   "jsdelivr": "dist/index.global.js",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./dist/*": "./dist/*",
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist",
     "README.md"
@@ -25,7 +39,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "npm run clean && tsup && tsup --config tsup.iife.config.ts",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
@@ -37,7 +51,7 @@
     "precommit": "npm run lint && npm run format",
     "prepare": "husky",
     "prepublishOnly": "npm run check",
-    "release": "npm publish --access public",
+    "release": "npm publish",
     "registry:official": "npm config set registry https://registry.npmjs.org/",
     "registry:mirror": "npm config set registry https://registry.npmmirror.com/"
   },

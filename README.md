@@ -7,7 +7,7 @@
 在 AppPulse 后端创建监控项目并获取 `appId`。新建项目默认使用白名单准入，管理员需通过后台接口将签发的 CID 加入白名单；也可切换为全部允许（黑名单除外）或黑名单拒绝。
 
 ```ts
-import { init, stop } from '@hulihan97/message-reporting'
+import { init, stop } from 'message-reporting'
 
 const result = await init({
   serverUrl: 'https://collector.example/api-prefix',
