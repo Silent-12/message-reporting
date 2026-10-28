@@ -1,7 +1,7 @@
 {
   "name": "@hulihan97/message-reporting",
   "version": "0.2.0",
-  "description": "Lightweight browser SDK for manual JSON reporting.",
+  "description": "Browser SDK for error monitoring, with CID initialization and admission.",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.cjs",
@@ -18,7 +18,7 @@
     "reporting",
     "browser",
     "typescript",
-    "beacon",
+    "monitoring",
     "fetch"
   ],
   "engines": {
