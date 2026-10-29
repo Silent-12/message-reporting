@@ -156,17 +156,23 @@ async function initialize(config: Config, signal: AbortSignal, id: number): Prom
     if (result.body.data.allowed) {
       // 无法安装浏览器监听器时不得宣称已允许监控，也不进行任何上报。
       if (!installCapture()) return { status: 'unavailable' }
-      activateEvents(config.serverUrl, config.appId, cid, (code) => {
-        if (id !== generation) return
-        if (code === 'CID_INVALID') {
-          try {
-            forgetCid()
-          } catch {
-            // 存储不可用时仍停止发送。
+      activateEvents(
+        config.serverUrl,
+        config.appId,
+        cid,
+        (code) => {
+          if (id !== generation) return
+          if (code === 'CID_INVALID') {
+            try {
+              forgetCid()
+            } catch {
+              // 存储不可用时仍停止发送。
+            }
           }
-        }
-        stop()
-      })
+          stop()
+        },
+        () => current?.getContext,
+      )
     }
     return { status: result.body.data.allowed ? 'allowed' : 'denied' }
   } catch {

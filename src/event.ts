@@ -1,5 +1,7 @@
 import { version as sdkVersion } from '../package.json'
 import { decodeBase64Url, encodeBase64Url, type ByteArray } from './base64url'
+import { createContextSession, readContext, type ContextProvider, type ContextSession } from './context'
+import { readEnvironment, type Environment } from './environment'
 import { isEnvelope, isRecord, request } from './request'
 
 /** 允许的内部事件类型，与后端协议常量一致。 */
@@ -28,8 +30,8 @@ export interface InternalEvent {
   pagePath?: string
   // 可选的来源位置；line 与 column 为非负整数行列号，URL 发送前去除查询与片段
   source?: { url?: string; line?: number; column?: number }
-  // 可选的环境信息，由采集模块从 navigator 等运行时读取
-  environment?: { userAgent?: string; online?: boolean; effectiveType?: string }
+  // 可选的环境信息，发送前与当前 runtime 自动采集值合并，显式字段优先
+  environment?: Environment
 }
 
 /** 单次内部事件发送结果：accepted 已接收，dropped 未发送或已丢弃，unknown 服务端判定重复，temporary_failure 重试耗尽。 */
@@ -48,6 +50,10 @@ interface Target {
   cid: string
   // 服务端判定 CID 无效或未授权时的回调
   onRejected: (code: string) => void
+  // 读取当前初始化配置中最新上下文回调的访问器
+  getContext: ContextProvider
+  // 本代次的上下文回调并发额度
+  contextSession: ContextSession
   // 本代次的停止控制器
   controller: AbortController
 }
@@ -84,10 +90,11 @@ const MAX_ENVIRONMENT_EFFECTIVE_TYPE_BYTES = 64
  * @param appId 服务端分配的应用标识
  * @param cid 服务端签发的规范 CID
  * @param onRejected 服务端判定 CID 无效或未授权时的回调
+ * @param getContext 读取当前初始化配置中最新上下文回调的访问器
  */
-export function activateEvents(serverUrl: string, appId: string, cid: string, onRejected: (code: string) => void): void {
+export function activateEvents(serverUrl: string, appId: string, cid: string, onRejected: (code: string) => void, getContext: ContextProvider): void {
   stopEvents()
-  target = { serverUrl, appId, cid, onRejected, controller: new AbortController() }
+  target = { serverUrl, appId, cid, onRejected, getContext, contextSession: createContextSession(), controller: new AbortController() }
 }
 
 /** 停止当前发送器及其等待中的操作。 */
@@ -169,6 +176,24 @@ function describe(value: unknown): string {
 }
 
 /**
+ * 合并自动采集与显式传入的环境信息
+ * @description 当前 runtime 可读取的字段作为基础，显式传入且类型正确的字段优先；全部缺失时返回 undefined
+ * @param explicit 内部调用方传入的环境信息
+ * @returns 待裁剪的环境信息；无可用字段时返回 undefined
+ */
+function collectEnvironment(explicit: InternalEvent['environment']): Environment | undefined {
+  const collected = readEnvironment()
+  const environment: Environment = {}
+  if (collected?.userAgent !== undefined) environment.userAgent = collected.userAgent
+  if (collected?.online !== undefined) environment.online = collected.online
+  if (collected?.effectiveType !== undefined) environment.effectiveType = collected.effectiveType
+  if (typeof explicit?.userAgent === 'string') environment.userAgent = explicit.userAgent
+  if (typeof explicit?.online === 'boolean') environment.online = explicit.online
+  if (typeof explicit?.effectiveType === 'string') environment.effectiveType = explicit.effectiveType
+  return Object.keys(environment).length ? environment : undefined
+}
+
+/**
  * 校验内部事件入参
  * @description 事件类型与级别须为协议允许值，发生时间须为安全整数
  * @param input 内部事件输入
@@ -185,10 +210,19 @@ function validInput(input: InternalEvent): boolean {
  * @param input 内部事件输入
  * @param appId 服务端分配的应用标识
  * @param eventId 本条事件标识
+ * @param context 本次事件的自定义上下文
+ * @param environment 本次事件的环境信息
  * @param encoder UTF-8 编码器
  * @returns 待加密的明文对象
  */
-function buildPlaintext(input: InternalEvent, appId: string, eventId: string, encoder: TextEncoder): Record<string, unknown> {
+function buildPlaintext(
+  input: InternalEvent,
+  appId: string,
+  eventId: string,
+  context: Record<string, unknown> | undefined,
+  environment: Environment | undefined,
+  encoder: TextEncoder,
+): Record<string, unknown> {
   const event: Record<string, unknown> = {
     schemaVersion: 1,
     eventId,
@@ -211,27 +245,30 @@ function buildPlaintext(input: InternalEvent, appId: string, eventId: string, en
     }
     if (Object.keys(source).length) event.source = source
   }
-  if (input.environment) {
-    const environment: Record<string, unknown> = {}
-    if (typeof input.environment.userAgent === 'string')
-      environment.userAgent = truncate(input.environment.userAgent, MAX_ENVIRONMENT_USER_AGENT_BYTES, encoder)
-    if (typeof input.environment.online === 'boolean') environment.online = input.environment.online
-    if (typeof input.environment.effectiveType === 'string')
-      environment.effectiveType = truncate(input.environment.effectiveType, MAX_ENVIRONMENT_EFFECTIVE_TYPE_BYTES, encoder)
-    if (Object.keys(environment).length) event.environment = environment
+  if (environment) {
+    const fields: Record<string, unknown> = {}
+    if (typeof environment.userAgent === 'string') fields.userAgent = truncate(environment.userAgent, MAX_ENVIRONMENT_USER_AGENT_BYTES, encoder)
+    if (typeof environment.online === 'boolean') fields.online = environment.online
+    if (typeof environment.effectiveType === 'string') fields.effectiveType = truncate(environment.effectiveType, MAX_ENVIRONMENT_EFFECTIVE_TYPE_BYTES, encoder)
+    if (Object.keys(fields).length) event.environment = fields
   }
+  if (context !== undefined) event.context = context
   return event
 }
 
 /**
  * 按明文上限降级事件体积
- * @description 超出上限时先移除环境信息，再按 JSON 编码字节缩短堆栈并保留其前部，仍超限则整条丢弃
+ * @description 超出上限时先移除自定义上下文，再移除环境信息，最后按 JSON 编码字节缩短堆栈并保留其前部，仍超限则整条丢弃
  * @param event 明文对象，降级时就地修改
  * @param encoder UTF-8 编码器
  * @returns 不超过上限的明文编码；无法满足时返回 undefined
  */
 function fitPlaintext(event: Record<string, unknown>, encoder: TextEncoder): ByteArray | undefined {
   let plain = encoder.encode(JSON.stringify(event))
+  if (plain.length > MAX_PLAINTEXT_BYTES && event.context !== undefined) {
+    delete event.context
+    plain = encoder.encode(JSON.stringify(event))
+  }
   if (plain.length > MAX_PLAINTEXT_BYTES && event.environment !== undefined) {
     delete event.environment
     plain = encoder.encode(JSON.stringify(event))
@@ -298,7 +335,7 @@ async function sealEnvelope(
 
 /**
  * 整理和加密内部事件
- * @description 在准备额度内完成字段校验、有界整理与加密；停止后不继续后续加密步骤
+ * @description 在准备额度内调用一次上下文回调，完成字段校验、有界整理与加密；停止后不继续后续加密步骤
  * @param input 内部事件输入
  * @param current 当前初始化代次的发送目标
  * @returns 加密信封正文与发送时间；参数非法、超出体积上限或已停止时返回 undefined
@@ -307,9 +344,13 @@ async function prepareEvent(input: InternalEvent, current: Target): Promise<{ bo
   const signal = current.controller.signal
   const encoder = new TextEncoder()
   if (!validInput(input)) return undefined
+  // 环境信息在等待上下文回调前采集，避免反映回调等待期间的状态变化。
+  const environment = collectEnvironment(input.environment)
+  const context = await readContext(current.getContext, current.contextSession, encoder)
+  if (signal.aborted) return undefined
   const eventId = encodeBase64Url(crypto.getRandomValues(new Uint8Array(16)))
   const iv = crypto.getRandomValues(new Uint8Array(12))
-  const plain = fitPlaintext(buildPlaintext(input, current.appId, eventId, encoder), encoder)
+  const plain = fitPlaintext(buildPlaintext(input, current.appId, eventId, context, environment, encoder), encoder)
   if (plain === undefined) return undefined
   const sentAt = Date.now()
   const body = await sealEnvelope(current, eventId, iv, plain, sentAt, signal, encoder)

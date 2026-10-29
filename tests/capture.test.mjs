@@ -51,6 +51,20 @@ function resourceEvent(tagName, fields) {
   return { type: 'error', target: { nodeType: 1, tagName, ...fields } }
 }
 
+test('自动捕获的事件携带环境信息与自定义上下文', async () => {
+  const state = setup()
+  try {
+    await sdk.init({ ...opts, getContext: () => ({ route: '/orders' }) })
+    state.dispatch('error', jsErrorEvent(state))
+    await settle(state, 1)
+    const plain = decrypt(state.events()[0])
+    assert.deepEqual(plain.context, { route: '/orders' })
+    assert.deepEqual(plain.environment, { userAgent: 'TestBrowser/1.0', online: true, effectiveType: '4g' })
+  } finally {
+    cleanup()
+  }
+})
+
 test('仅在明确允许后安装监听器，重复初始化不重复注册，停止后只移除自身监听器', async () => {
   const hostHandler = () => {}
   const hostListener = () => {}

@@ -27,11 +27,12 @@ const originalFetch = globalThis.fetch
 /**
  * 安装宿主环境并重置 SDK 状态
  * @param handler 事件请求的处理函数
+ * @param options 其他宿主选项，例如覆盖 navigator
  * @returns 模拟存储内容
  */
-function setup(handler) {
+function setup(handler, options = {}) {
   sdk.stop()
-  return installHost({ handler }).entries
+  return installHost({ handler, ...options }).entries
 }
 
 test('内部事件加密后发送，按字节限制并清理 URL', async () => {
@@ -73,8 +74,8 @@ test('内部事件加密后发送，按字节限制并清理 URL', async () => {
 test('生产发送器按公开向量固定参数生成互通密文', async () => {
   const vector = JSON.parse(await readFile(new URL('./fixtures/protocol-v1.json', import.meta.url), 'utf8')).vectors[0]
   let sent
-  // 该用例需要按向量固定 CID 与事件标识，因此自行替换 setup 安装的 fetch。
-  setup()
+  // 该用例需要按向量固定 CID 与事件标识，因此自行替换 setup 安装的 fetch；向量明文不含环境信息。
+  setup(undefined, { navigator: {} })
   globalThis.fetch = async (url, options) => {
     if (url.endsWith('/cids')) return envelope({ cid: vector.cid })
     if (url.endsWith('/admission')) return envelope({ allowed: true })
@@ -327,6 +328,8 @@ test('加密准备最多五个，停止后仍占额度直到旧加密任务真�
   })
   try {
     const first = Array.from({ length: 5 }, () => sdk.sendInternalEvent(event))
+    // 上下文读取是异步边界，等待微任务开始后才进入加密准备。
+    await new Promise((resolve) => setImmediate(resolve))
     assert.equal(pending.length, 5)
     assert.deepEqual(await Promise.all(Array.from({ length: 50 }, () => sdk.sendInternalEvent(event))), Array(50).fill('dropped'))
     sdk.stop()

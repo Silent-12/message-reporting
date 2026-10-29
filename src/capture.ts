@@ -1,4 +1,5 @@
 import { canSendEvent, cleanUrl, sendInternalEvent, type InternalEvent } from './event'
+import { readField, readString } from './safe-read'
 
 // 浏览器自动捕获：仅在初始化确认允许上报后安装窗口级监听器，采集同步 JavaScript 错误、
 // 未处理 Promise 拒绝与资源加载错误，交给内部发送器异步上报；不覆盖宿主已有的全局处理器，
@@ -19,32 +20,6 @@ interface Installed {
 let installed: Installed | undefined
 /** 内联数据与 Blob 地址不包含可定位的位置，内容体积也不可控，因此不作为来源上报。 */
 const INLINE_URL_PATTERN = /^(?:data|blob):/i
-
-/**
- * 安全读取对象字段
- * @description 属性访问可能因代理、跨域或宿主实现抛错，读取失败按缺失处理
- * @param value 待读取对象
- * @param key 字段名
- * @returns 字段值；不可读取时返回 undefined
- */
-function readField(value: unknown, key: string): unknown {
-  try {
-    return (value as Record<string, unknown>)[key]
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * 读取非空字符串字段
- * @param value 待读取对象
- * @param key 字段名
- * @returns 非空字符串；缺失或类型不符时返回 undefined
- */
-function readString(value: unknown, key: string): string | undefined {
-  const field = readField(value, key)
-  return typeof field === 'string' && field !== '' ? field : undefined
-}
 
 /**
  * 判断宿主是否具备采集能力

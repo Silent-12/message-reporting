@@ -17,15 +17,29 @@ export const envelope = (data, status = 200) => ({
   text: async () => JSON.stringify({ code: status, message: 'ok', timestamp: 'now', data }),
 })
 
+/** 安装宿主时覆盖的全局属性及其安装前描述符，卸载时按原状恢复。 */
+const originals = new Map()
+
+/**
+ * 覆盖全局属性并记录安装前的描述符
+ * @param key 全局属性名
+ * @param value 测试用值
+ */
+function defineHost(key, value) {
+  if (!originals.has(key)) originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key))
+  Object.defineProperty(globalThis, key, { configurable: true, value })
+}
+
 /**
  * 安装测试宿主环境
  * @description 提供 Web Crypto、可读写存储、记录监听器的窗口和可替换的 fetch。窗口声明 onunhandledrejection，
  * 因为初始化会显式探测该能力；缺少时无法进入允许状态
  * @param options.allowed 上报策略判定结果，可在测试运行中修改
  * @param options.handler 事件请求的处理函数，默认接受全部事件
- * @returns 宿主状态：entries、requests、listeners、addCalls、removeCalls、win、dispatch 与 events
+ * @param options.navigator 模拟的 navigator，默认含浏览器 UA、在线状态与网络类型
+ * @returns 宿主状态：entries、requests、listeners、addCalls、removeCalls、win、navigator、dispatch 与 events
  */
-export function installHost({ allowed = true, handler } = {}) {
+export function installHost({ allowed = true, handler, navigator = { userAgent: 'TestBrowser/1.0', onLine: true, connection: { effectiveType: '4g' } } } = {}) {
   const state = {
     allowed,
     handler: handler ?? (() => envelope(null)),
@@ -35,16 +49,14 @@ export function installHost({ allowed = true, handler } = {}) {
     addCalls: [],
     removeCalls: [],
     win: undefined,
+    navigator,
   }
   const { entries } = state
-  Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto })
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: {
-      getItem: (key) => entries.get(key) ?? null,
-      setItem: (key, value) => entries.set(key, value),
-      removeItem: (key) => entries.delete(key),
-    },
+  defineHost('crypto', webcrypto)
+  defineHost('localStorage', {
+    getItem: (key) => entries.get(key) ?? null,
+    setItem: (key, value) => entries.set(key, value),
+    removeItem: (key) => entries.delete(key),
   })
   state.win = {
     onerror: undefined,
@@ -60,7 +72,8 @@ export function installHost({ allowed = true, handler } = {}) {
       if (index >= 0) state.listeners.splice(index, 1)
     },
   }
-  Object.defineProperty(globalThis, 'window', { configurable: true, value: state.win })
+  defineHost('window', state.win)
+  defineHost('navigator', navigator)
   state.fetch = (url, options) => {
     state.requests.push({ url, options })
     if (url.endsWith('/cids')) return Promise.resolve(envelope({ cid }))
@@ -75,11 +88,13 @@ export function installHost({ allowed = true, handler } = {}) {
   return state
 }
 
-/** 移除模拟窗口与存储，避免影响后续用例。 */
+/** 恢复安装前的全局属性，避免影响后续用例。 */
 export function uninstallHost() {
-  Reflect.deleteProperty(globalThis, 'window')
-  Reflect.deleteProperty(globalThis, 'localStorage')
-  Reflect.deleteProperty(globalThis, 'crypto')
+  for (const [key, descriptor] of originals) {
+    if (descriptor) Object.defineProperty(globalThis, key, descriptor)
+    else Reflect.deleteProperty(globalThis, key)
+  }
+  originals.clear()
 }
 
 /**

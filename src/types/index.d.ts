@@ -7,7 +7,7 @@ export interface InitOptions {
   serverUrl: string
   // 服务端分配的应用标识
   appId: string
-  // 可选的事件上下文回调，在后续目标中使用；重复初始化时以最新传入为准
+  // 可选的事件上下文回调，每个待处理事件调用一次；重复初始化时以最新传入为准
   getContext?: () => Record<string, unknown> | Promise<Record<string, unknown>>
 }
 
