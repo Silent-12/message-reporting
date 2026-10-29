@@ -50,6 +50,18 @@ test('签发并持久化 CID 后查询上报策略，停止后复用并保留路
   assert.equal(requests.length, 3)
 })
 
+test('允许任意主机的 HTTP 服务地址', async () => {
+  setup()
+  const requests = []
+  globalThis.fetch = async (url) => {
+    requests.push(url)
+    return url.endsWith('/cids') ? envelope({ cid }) : envelope({ allowed: true })
+  }
+  assert.deepEqual(await sdk.init({ ...opts, serverUrl: 'http://collector.example/prefix' }), { status: 'allowed' })
+  assert.deepEqual(requests, ['http://collector.example/prefix/v1/cids', 'http://collector.example/prefix/v1/admission'])
+  sdk.stop()
+})
+
 test('不同应用隔离、禁止上报和参数校验', async () => {
   const entries = setup()
   globalThis.fetch = async (url) => (url.endsWith('/cids') ? envelope({ cid }) : envelope({ allowed: false }))
@@ -59,7 +71,6 @@ test('不同应用隔离、禁止上报和参数校验', async () => {
   for (const bad of [
     { ...opts, appId: 'abc' },
     { ...opts, appId: 'ab-1' },
-    { ...opts, serverUrl: 'http://example.test' },
     { ...opts, serverUrl: 'https://example.test/?' },
     { ...opts, serverUrl: 'https://user@example.test' },
   ])

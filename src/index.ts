@@ -31,7 +31,7 @@ let allowed = false
 
 /**
  * 校验并规范化初始化选项
- * @description 只接受 HTTPS（loopback 允许 HTTP）且不含凭据、查询与片段的绝对地址，规范化协议、主机与默认端口后去除末尾斜杠，
+ * @description 接受 HTTP 或 HTTPS 的绝对地址且不含凭据、查询与片段，规范化协议、主机与默认端口后去除末尾斜杠，
  * 保留路径前缀及其大小写；应用标识须符合协议格式
  * @param options 接入方传入的初始化选项
  * @returns 规范化后的初始化目标；不合法时返回 undefined
@@ -43,8 +43,7 @@ function normalize(options: InitOptions): Config | undefined {
   try {
     const url = new URL(options.serverUrl)
     if (url.username || url.password || url.search || url.hash) return undefined
-    const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
-    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) return undefined
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined
     return { serverUrl: url.href.replace(/\/+$/, ''), appId: options.appId, getContext: options.getContext }
   } catch {
     return undefined
