@@ -1,34 +1,23 @@
 import assert from 'node:assert/strict'
-import { webcrypto } from 'node:crypto'
 import { test } from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:http'
 import vm from 'node:vm'
 import * as sdk from '../dist/index.js'
+import { cid, envelope, installHost } from './support/host.mjs'
 
-const cid = Buffer.alloc(32, 42).toString('base64url')
 const otherCid = Buffer.alloc(32, 43).toString('base64url')
 const opts = { serverUrl: 'https://example.test/prefix/', appId: 'project1' }
 const nativeFetch = globalThis.fetch
-const envelope = (data, status = 200) => ({
-  status,
-  text: async () => JSON.stringify({ code: status, message: 'ok', data, timestamp: '2026-01-01T00:00:00Z' }),
-})
 
+/**
+ * 安装宿主环境并重置 SDK 状态
+ * @returns 模拟存储内容
+ */
 function setup() {
   sdk.stop()
-  const entries = new Map()
-  Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto })
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: {
-      getItem: (key) => entries.get(key) ?? null,
-      setItem: (key, value) => entries.set(key, value),
-      removeItem: (key) => entries.delete(key),
-    },
-  })
-  return entries
+  return installHost().entries
 }
 
 test('ESM、CJS 和 IIFE 只公开初始化与停止能力', async () => {
@@ -187,7 +176,8 @@ test('签发响应正文读取中断会重试，JSON 解析错误不重试', asy
   let attempts = 0
   let invalid = false
   globalThis.setTimeout = (fn, ms) => timer(fn, ms === 5000 ? 5000 : 0)
-  globalThis.fetch = async (url) => {
+  // 每次 setup 都会重新安装宿主 fetch，因此重装后需要重新绑定本用例的响应。
+  const respond = async (url) => {
     if (url.endsWith('/admission')) return envelope({ allowed: true })
     attempts++
     if (invalid) return { status: 200, text: async () => '{invalid' }
@@ -200,10 +190,12 @@ test('签发响应正文读取中断会重试，JSON 解析错误不重试', asy
       }
     return envelope({ cid })
   }
+  globalThis.fetch = respond
   try {
     assert.equal((await sdk.init(opts)).status, 'allowed')
     assert.equal(attempts, 2)
     setup()
+    globalThis.fetch = respond
     attempts = 0
     invalid = true
     assert.equal((await sdk.init(opts)).status, 'failed')

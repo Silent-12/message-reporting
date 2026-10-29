@@ -34,6 +34,6 @@ module.exports = {
     '@typescript-eslint/no-use-before-define': ['error', { functions: false, typedefs: false }],
     '@typescript-eslint/ban-ts-comment': 'warn',
     '@typescript-eslint/explicit-module-boundary-types': 'warn',
-    '@typescript-eslint/ban-types': 'warn',
+    '@typescript-eslint/no-restricted-types': 'warn',
   },
 }

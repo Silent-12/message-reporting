@@ -1,6 +1,6 @@
 # message-reporting
 
-浏览器错误监控 SDK。目前已提供 CID 签发、持久化与初始化时的上报策略查询；错误采集和加密事件发送仍在后续目标中实现。
+浏览器错误监控 SDK。提供 CID 签发、持久化、初始化时的上报策略查询，以及允许上报后的浏览器错误自动捕获与加密发送。
 
 ## 初始化
 
@@ -15,7 +15,7 @@ const result = await init({
 })
 
 if (result.status === 'allowed') {
-  // CID 已就绪且上报策略允许上报；错误捕获与发送尚未实现。
+  // CID 已就绪且上报策略允许上报，SDK 已开始自动捕获浏览器错误。
 }
 
 stop()
@@ -25,7 +25,19 @@ stop()
 
 `init` 返回 `allowed`、`denied`、`invalid_config`、`unavailable`、`failed`、`conflict` 或 `stopped` 状态；部分失败包含 `errorCode`。同一 `serverUrl` 与 `appId` 视为同一监控目标：并发调用共用一次初始化，已允许后重复调用复用允许状态并更新 `getContext`；不同监控目标并发调用返回冲突，停止后可再次初始化。CID 按服务地址和应用隔离存储，不在初始化结果中返回。
 
-请求单次超时 5 秒，网络故障、超时及 5xx 最多按 1、2、4 秒间隔重试三次。请求体只包含协议字段（`appId`、`cid`），内容类型为 `application/json`；服务端拒绝多余字段与非 JSON 内容类型。签发响应丢失后服务端可能存在未使用的签发记录。CID 不代表可信用户身份。
+## 自动捕获
+
+`init` 返回 `allowed` 后，SDK 在当前窗口安装监听器并自动上报三类浏览器级错误，经同一加密事件通道发送：
+
+- 同步 JavaScript 运行错误：`kind` 为 `javascript`；
+- 未处理的 Promise 拒绝：`kind` 为 `unhandledrejection`；
+- 图片、脚本及其他资源元素加载失败：`kind` 分别为 `img`、`script`、`resource`。
+
+事件只包含实际可获得的字段：消息、错误名称、堆栈、来源 URL 与行列号，以及去除查询和片段的页面路径。资源元素错误通过捕获阶段监听取得，地址取元素实际加载位置；`data:` 与 `blob:` 地址不进入事件内容。跨域脚本可能只提供受限信息或没有堆栈。初始化之前、等待上报策略结果期间以及 `stop` 之后的错误不缓存、不上报；重复初始化不重复注册。`stop` 只移除 SDK 自己安装的监听器，不覆盖 `window.onerror`，不调用 `preventDefault` 或阻止事件传播。事件风暴受加密准备与上报请求各 5 个并发上限约束，超出的事件在组装前丢弃；没有离线队列，页面关闭或断网时允许丢失。宿主无法移除 SDK 监听器时不会再次注册，避免同一错误被重复上报。
+
+以下范围不在首版承诺内：已被应用或框架吞掉的错误、Shadow DOM 内部元素的资源加载错误、其他 iframe 与 Worker、`console.error` 调用、SDK 安装前的错误、同一页面加载多份 SDK 副本、Source Map 还原。运行环境缺少 `window`、无法注册监听器或不支持 `unhandledrejection` 时，`init` 返回 `unavailable`，不会宣称已开始监控；该能力判定在签发 CID 与查询上报策略之前完成。
+
+请求单次超时 5 秒，网络故障、超时及 5xx 最多按 1、2、4 秒间隔重试三次。签发与上报策略请求体只包含协议字段（`appId`、`cid`），事件请求体为加密信封；内容类型均为 `application/json`，服务端拒绝多余字段与非 JSON 内容类型。签发响应丢失后服务端可能存在未使用的签发记录。CID 不代表可信用户身份。
 
 ## 开发和验证
 
@@ -34,4 +46,4 @@ npm ci
 npm run check
 ```
 
-构建提供 ESM、CJS、IIFE 和类型声明。旧的 `report`、`reportImmediate` 及 GIF/Beacon 接口已移除；本阶段不发送业务事件。真实浏览器、接收服务和生产部署的验证状态见 `document/前端错误监控目标总览.md`。
+构建提供 ESM、CJS、IIFE 和类型声明。旧的 `report`、`reportImmediate` 及 GIF/Beacon 接口已移除；错误事件由 SDK 自动采集并经加密通道发送。真实浏览器、接收服务和生产部署的验证状态见 `document/前端错误监控目标总览.md`。

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { webcrypto, createCipheriv, createDecipheriv, hkdfSync } from 'node:crypto'
+import { webcrypto, createCipheriv } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
+import { cid, decrypt, envelope, installHost, opts } from './support/host.mjs'
 
 // 将公开入口和内部发送器构建在同一模块，测试生产源码但不新增公开导出。
 const bundle = await build({
@@ -20,46 +21,17 @@ const bundle = await build({
 const sdk = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString('base64')}`)
 // sdkVersion 的唯一真源是 package.json，避免测试与源码出现双源。
 const { version: sdkVersion } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
-const cid = Buffer.alloc(32, 42).toString('base64url')
-const opts = { serverUrl: 'https://example.test/prefix', appId: 'project1' }
 const event = { kind: 'javascript', occurredAt: 123, message: '测试💥' }
-const envelope = (data, status = 200) => ({ status, text: async () => JSON.stringify({ code: status, message: 'ok', timestamp: 'now', data }) })
 const originalFetch = globalThis.fetch
 
-function setup(handler = () => envelope(null)) {
+/**
+ * 安装宿主环境并重置 SDK 状态
+ * @param handler 事件请求的处理函数
+ * @returns 模拟存储内容
+ */
+function setup(handler) {
   sdk.stop()
-  const storage = new Map()
-  Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto })
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: {
-      getItem: (key) => storage.get(key) ?? null,
-      setItem: (key, value) => storage.set(key, value),
-      removeItem: (key) => storage.delete(key),
-    },
-  })
-  globalThis.fetch = (url, options) =>
-    url.endsWith('/cids')
-      ? Promise.resolve(envelope({ cid }))
-      : url.endsWith('/admission')
-        ? Promise.resolve(envelope({ allowed: true }))
-        : handler(url, options)
-  return storage
-}
-
-function decrypt(envelope) {
-  const key = hkdfSync(
-    'sha256',
-    Buffer.from(cid, 'base64url'),
-    Buffer.from('message-reporting/v1'),
-    Buffer.from(`aes-256-gcm:${envelope.appId}:${envelope.eventId}`),
-    32,
-  )
-  const encrypted = Buffer.from(envelope.ciphertext, 'base64url')
-  const decipher = createDecipheriv('aes-256-gcm', Buffer.from(key), Buffer.from(envelope.iv, 'base64url'))
-  decipher.setAAD(Buffer.from(JSON.stringify([1, envelope.appId, cid, envelope.eventId, envelope.sentAt])))
-  decipher.setAuthTag(encrypted.subarray(-16))
-  return JSON.parse(Buffer.concat([decipher.update(encrypted.subarray(0, -16)), decipher.final()]).toString())
+  return installHost({ handler }).entries
 }
 
 test('内部事件加密后发送，按字节限制并清理 URL', async () => {

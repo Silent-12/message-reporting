@@ -1,5 +1,5 @@
 import { version as sdkVersion } from '../package.json'
-import { decodeBase64Url, encodeBase64Url } from './base64url'
+import { decodeBase64Url, encodeBase64Url, type ByteArray } from './base64url'
 import { isEnvelope, isRecord, request } from './request'
 
 /** 允许的内部事件类型，与后端协议常量一致。 */
@@ -136,12 +136,15 @@ function truncateJsonString(value: string, max: number, encoder: TextEncoder): s
 
 /**
  * 去除 URL 的查询与片段后按字节上限截断
+ * @description 超长地址先按字符上限截取，避免在错误处理路径上复制整个字符串；UTF-8 每个码元至少占一个字节，
+ * 因此不会截掉仍在字节上限内的内容
  * @param value 页面路径或来源地址
- * @param encoder UTF-8 编码器
+ * @param encoder UTF-8 编码器，省略时按需创建
  * @returns 不含查询与片段的前缀
  */
-function cleanUrl(value: string, encoder: TextEncoder): string {
-  return truncate(value.split(/[?#]/, 1)[0], MAX_URL_BYTES, encoder)
+export function cleanUrl(value: string, encoder: TextEncoder = new TextEncoder()): string {
+  const bounded = value.length > MAX_URL_BYTES ? value.slice(0, MAX_URL_BYTES).replace(/[\uD800-\uDBFF]$/, '') : value
+  return truncate(bounded.split(/[?#]/, 1)[0], MAX_URL_BYTES, encoder)
 }
 
 /**
@@ -227,7 +230,7 @@ function buildPlaintext(input: InternalEvent, appId: string, eventId: string, en
  * @param encoder UTF-8 编码器
  * @returns 不超过上限的明文编码；无法满足时返回 undefined
  */
-function fitPlaintext(event: Record<string, unknown>, encoder: TextEncoder): Uint8Array | undefined {
+function fitPlaintext(event: Record<string, unknown>, encoder: TextEncoder): ByteArray | undefined {
   let plain = encoder.encode(JSON.stringify(event))
   if (plain.length > MAX_PLAINTEXT_BYTES && event.environment !== undefined) {
     delete event.environment
@@ -262,8 +265,8 @@ function fitPlaintext(event: Record<string, unknown>, encoder: TextEncoder): Uin
 async function sealEnvelope(
   current: Target,
   eventId: string,
-  iv: Uint8Array,
-  plain: Uint8Array,
+  iv: ByteArray,
+  plain: ByteArray,
   sentAt: number,
   signal: AbortSignal,
   encoder: TextEncoder,
@@ -311,6 +314,16 @@ async function prepareEvent(input: InternalEvent, current: Target): Promise<{ bo
   const sentAt = Date.now()
   const body = await sealEnvelope(current, eventId, iv, plain, sentAt, signal, encoder)
   return body === undefined ? undefined : { body, sentAt }
+}
+
+/**
+ * 判断内部发送器是否还有事件额度
+ * @description 供采集模块在组装事件前检查，避免为必然丢弃的事件读取字段或拼接字符串
+ * @returns 是否还可以提交一条事件
+ */
+export function canSendEvent(): boolean {
+  const current = target
+  return current !== undefined && !current.controller.signal.aborted && activePreparations < MAX_EVENT_CONCURRENCY && activeRequests < MAX_EVENT_CONCURRENCY
 }
 
 /**

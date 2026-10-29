@@ -1,5 +1,6 @@
 import type { InitOptions, InitResult } from './types/index'
 import { decodeBase64Url, encodeBase64Url } from './base64url'
+import { canCapture, installCapture, uninstallCapture } from './capture'
 import { activateEvents, stopEvents } from './event'
 import { isEnvelope, isRecord, request, type HttpReply } from './request'
 
@@ -101,7 +102,8 @@ function toFailureResult(reply: HttpReply): InitResult {
 async function initialize(config: Config, signal: AbortSignal, id: number): Promise<InitResult> {
   let storage: Storage
   try {
-    // 目标 01 要求缺失安全随机源、Web Crypto、UTF-8 编解码或 Fetch 时返回明确不可用状态。
+    // 目标 01 要求缺失安全随机源、Web Crypto、UTF-8 编解码或 Fetch 时返回明确不可用状态；
+    // 浏览器监听能力同样在发起请求前检查，避免无法采集的环境仍签发 CID 或查询上报策略。
     if (
       typeof fetch !== 'function' ||
       typeof atob !== 'function' ||
@@ -109,7 +111,8 @@ async function initialize(config: Config, signal: AbortSignal, id: number): Prom
       typeof TextEncoder !== 'function' ||
       typeof TextDecoder !== 'function' ||
       !globalThis.crypto?.subtle ||
-      !globalThis.crypto?.getRandomValues
+      !globalThis.crypto?.getRandomValues ||
+      !canCapture()
     )
       return { status: 'unavailable' }
     storage = globalThis.localStorage
@@ -151,6 +154,8 @@ async function initialize(config: Config, signal: AbortSignal, id: number): Prom
       return toFailureResult(result)
     }
     if (result.body.data.allowed) {
+      // 无法安装浏览器监听器时不得宣称已允许监控，也不进行任何上报。
+      if (!installCapture()) return { status: 'unavailable' }
       activateEvents(config.serverUrl, config.appId, cid, (code) => {
         if (id !== generation) return
         if (code === 'CID_INVALID') {
@@ -213,6 +218,7 @@ export function init(options: InitOptions): Promise<InitResult> {
  */
 export function stop(): void {
   generation++
+  uninstallCapture()
   stopEvents()
   controller?.abort()
   controller = undefined
