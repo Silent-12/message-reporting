@@ -7,7 +7,8 @@ import { defineConfig, type Options } from 'tsup';
 export const shared: Options = {
   entry: ['src/index.ts'],
   sourcemap: true,
-  minify: false,
+  // JS 产物压缩：构建结果不保留注释与多余空白，类型声明仍供编辑器提示
+  minify: true,
   splitting: false,
   target: 'es2019',
   platform: 'browser',

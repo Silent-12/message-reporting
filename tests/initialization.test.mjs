@@ -11,7 +11,10 @@ const cid = Buffer.alloc(32, 42).toString('base64url')
 const otherCid = Buffer.alloc(32, 43).toString('base64url')
 const opts = { serverUrl: 'https://example.test/prefix/', appId: 'project1' }
 const nativeFetch = globalThis.fetch
-const envelope = (data, status = 200) => ({ status, json: async () => ({ code: status, message: 'ok', data, timestamp: '2026-01-01T00:00:00Z' }) })
+const envelope = (data, status = 200) => ({
+  status,
+  text: async () => JSON.stringify({ code: status, message: 'ok', data, timestamp: '2026-01-01T00:00:00Z' }),
+})
 
 function setup() {
   sdk.stop()
@@ -175,6 +178,40 @@ test('网络失败最多四次请求，指数退避为 1、2、4 秒；429 不�
     assert.equal(calls, 1)
   } finally {
     globalThis.setTimeout = actualSetTimeout
+  }
+})
+
+test('签发响应正文读取中断会重试，JSON 解析错误不重试', async () => {
+  setup()
+  const timer = globalThis.setTimeout
+  let attempts = 0
+  let invalid = false
+  globalThis.setTimeout = (fn, ms) => timer(fn, ms === 5000 ? 5000 : 0)
+  globalThis.fetch = async (url) => {
+    if (url.endsWith('/admission')) return envelope({ allowed: true })
+    attempts++
+    if (invalid) return { status: 200, text: async () => '{invalid' }
+    if (attempts === 1)
+      return {
+        status: 200,
+        text: async () => {
+          throw new TypeError('connection lost')
+        },
+      }
+    return envelope({ cid })
+  }
+  try {
+    assert.equal((await sdk.init(opts)).status, 'allowed')
+    assert.equal(attempts, 2)
+    setup()
+    attempts = 0
+    invalid = true
+    assert.equal((await sdk.init(opts)).status, 'failed')
+    assert.equal(attempts, 1)
+  } finally {
+    globalThis.setTimeout = timer
+    sdk.stop()
+    globalThis.fetch = nativeFetch
   }
 })
 
