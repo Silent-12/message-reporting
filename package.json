@@ -3,12 +3,19 @@
   "version": "0.2.0",
   "description": "Browser SDK for error monitoring, with CID initialization and reporting policy checks.",
   "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Silent-12/message-reporting.git"
+  },
+  "homepage": "https://github.com/Silent-12/message-reporting#readme",
+  "bugs": {
+    "url": "https://github.com/Silent-12/message-reporting/issues"
+  },
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
-  "unpkg": "dist/index.global.js",
-  "jsdelivr": "dist/index.global.js",
   "exports": {
     ".": {
       "import": {
@@ -48,12 +55,9 @@
     "format:write": "prettier --write \"src/**/*.ts\" \"tests/**/*.mjs\" \"*.cjs\"",
     "test": "npm run build && node --test tests/*.test.mjs",
     "check": "npm run typecheck && npm run lint && npm run format && npm test",
+    "release:pack": "npm run check && npm pack --ignore-scripts",
     "precommit": "npm run lint && npm run format",
-    "prepare": "husky",
-    "prepublishOnly": "npm run check",
-    "release": "npm publish",
-    "registry:official": "npm config set registry https://registry.npmjs.org/",
-    "registry:mirror": "npm config set registry https://registry.npmmirror.com/"
+    "prepare": "husky"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.1",

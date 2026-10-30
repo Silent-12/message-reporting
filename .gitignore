@@ -31,3 +31,7 @@ coverage
 
 # 环境变量
 .env
+
+# 本地发布产物与凭据
+*.tgz
+.npmrc

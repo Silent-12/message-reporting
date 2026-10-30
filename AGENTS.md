@@ -48,5 +48,5 @@
 - 修改 TypeScript 源码、测试或构建配置后，执行 `npm run check`；该命令包含类型检查、lint、格式检查、构建和 Node.js 内置测试。根据变更补充相关边界及 ESM、CJS、IIFE 行为验证；失败须排查修复，无法执行时说明原因及影响。
 - 修改 `package.json`、锁文件、ESLint、Prettier、Husky、commitlint 等工程配置时，按受影响范围执行安装、检查、提交钩子或其他相关验证；涉及依赖、包入口或发布文件时核对安装结果并执行 `npm pack --dry-run`，检查包内容和入口。避免为验证而覆盖用户已有改动或修改全局配置。
 - 仅修改文档等低风险内容时，执行与变更相称的检查；核对文件路径、命令和描述是否与当前仓库一致。`npm run lint:fix`、`npm run format:write` 会修改文件，使用后检查变更范围。
-- 发布相关变更可使用 `npm pack --dry-run` 检查发布内容；`npm run release` 会发布公开 npm 包，只有用户明确授权发布时才执行。不要在仓库中保存发布凭据或 token。
+- 发布相关变更可使用 `npm pack --dry-run` 检查发布内容；发布通过 GitHub Release 完成（推送 `v*` tag 触发 `.github/workflows/release.yml`），不向 npm 发布。不要在仓库中保存任何发布凭据或 token。
 - 提交遵循项目的 Conventional Commits 校验及项目提交技能；提交前核对暂存范围，保留用户已有的其他改动。

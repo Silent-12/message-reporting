@@ -32,21 +32,19 @@ SDK 以不干扰宿主为目标：不覆盖 `window.onerror`，不阻止事件�
 
 ## 📦 安装
 
+SDK 只通过 GitHub Release 分发，不发布到 npm。按版本安装 Release 中的 tarball：
+
 ```bash
-# npm
-npm install message-reporting
+# npm（示例版本 0.2.0）
+npm install https://github.com/Silent-12/message-reporting/releases/download/v0.2.0/message-reporting-0.2.0.tgz
 
-# pnpm
-pnpm add message-reporting
-
-# yarn
-yarn add message-reporting
+# pnpm add / yarn add 同样支持该 URL
 ```
 
-也可以直接通过 CDN 引入 IIFE 产物，全局变量名为 `MessageReportingSDK`：
+也可以下载 Release 中的 tarball，解压后把 `dist/index.global.js` 自托管，作为独立脚本引入，全局变量名为 `MessageReportingSDK`：
 
 ```html
-<script src="https://unpkg.com/message-reporting@0.2.0/dist/index.global.js"></script>
+<script src="/cdn/message-reporting/index.global.js"></script>
 ```
 
 ## 🚀 快速开始
@@ -90,10 +88,10 @@ import { stop } from 'message-reporting'
 stop()
 ```
 
-### 4. 通过 CDN 初始化
+### 4. 通过独立脚本初始化
 
 ```html
-<script src="https://unpkg.com/message-reporting@0.2.0/dist/index.global.js"></script>
+<script src="/cdn/message-reporting/index.global.js"></script>
 <script>
   MessageReportingSDK.init({
     serverUrl: 'https://collector.example/api-prefix',
@@ -132,7 +130,7 @@ createRoot(document.getElementById('root')!).render(<App />)
 
 > 首版捕获的是浏览器级错误。已被应用或框架自行捕获并吞掉的错误、`console.error` 调用不在自动捕获范围内。
 
-> 若页面配置了 CSP，需在 `connect-src` 中放行 `serverUrl`；通过 CDN 引入时还需在 `script-src` 中放行对应来源。
+> 若页面配置了 CSP，需在 `connect-src` 中放行 `serverUrl`；自托管脚本时还需在 `script-src` 中放行脚本来源。
 
 ## ⚙️ API
 
@@ -339,6 +337,7 @@ npm run check
 | `npm run format` | Prettier 格式检查。 |
 | `npm test` | 先构建，再运行 `tests/*.test.mjs`。 |
 | `npm pack --dry-run` | 检查发布包内容与入口。 |
+| `npm run release:pack` | 执行完整检查并生成 GitHub Release 用的 tarball。 |
 
 构建产物位于 `dist/`：
 
@@ -348,6 +347,27 @@ npm run check
 | `dist/index.cjs` | CJS | `require('message-reporting')` |
 | `dist/index.global.js` | IIFE | 全局变量 `MessageReportingSDK` |
 | `dist/index.d.ts` / `index.d.cts` | 类型声明 | ESM / CJS 类型入口。 |
+
+## 🚢 发布（GitHub Release）
+
+SDK 不发布到 npm，发布流程由 GitHub Actions 完成：
+
+1. 更新 `package.json` 的 `version` 并提交。
+2. 打 tag 并推送，tag 必须与版本号一致：
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+3. [`.github/workflows/release.yml`](.github/workflows/release.yml) 会执行 `npm ci --ignore-scripts`、`npm run release:pack`（内部包含 `npm run check`）并创建 Release，附件为 `message-reporting-0.2.0.tgz`。
+4. 消费端按上文安装 URL 使用；IIFE 用户可从附件中取 `dist/index.global.js` 自托管。
+
+本地手动打包（不上传）：
+
+```bash
+npm run release:pack
+```
 
 ## 📚 文档
 
@@ -365,6 +385,7 @@ npm run check
 - 当前版本 **0.2.0**。初始化、CID、上报策略、自动捕获、环境信息、自定义上下文、加密发送与多格式产物均已实现并有自动化测试覆盖。
 - 真实浏览器矩阵、真实接收端联调、Vue / React 实际接入和生产部署验收尚未执行；首次接入建议先在测试环境完成「初始化 → 触发错误 → 接收端落库」的完整联调。
 - 首版没有离线队列、旧通道兼容层和 Source Map 还原能力；页面关闭或断网时允许丢失事件。
+- 分发方式为 GitHub Release tarball，不发布到 npm；Release 由 tag 触发的 GitHub Actions 生成。
 
 ## 📄 License
 
