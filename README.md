@@ -1,6 +1,6 @@
 # 🛡️ message-reporting
 
-> 面向浏览器 HTML / Vue / React 应用的错误监控 SDK：自动捕获全局错误，附加环境信息与自定义上下文，经加密通道上报到 AppPulse 后端。
+> 面向浏览器 HTML / Vue / React 应用的错误监控 SDK：自动捕获全局错误，可选监听控制台输出，附加环境信息与自定义上下文，经加密通道上报到 AppPulse 后端。
 
 ![version](https://img.shields.io/badge/version-0.2.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
@@ -16,17 +16,18 @@
 4. 🌐 附加浏览器环境信息，并按需调用 `getContext` 补充业务上下文；
 5. 🔒 校验、裁剪并加密事件，通过 `POST /v1/events` 上报。
 
-SDK 以不干扰宿主为目标：不覆盖 `window.onerror`，不阻止事件默认行为或传播，采集与发送过程中的异常不会抛给业务代码。
+SDK 以不干扰宿主为目标：不覆盖 `window.onerror`，不阻止事件默认行为或传播。开启控制台监听时会包装选中的 `console` 方法并保留原有输出；采集与发送过程中的异常不会抛给业务代码。
 
 ## ✨ 核心特性
 
 - 🪪 **CID 自动管理**：首次初始化获取 CID 并持久化，后续复用；同一监控目标并发初始化只执行一次。
 - ✅ **上报策略准入**：未取得明确允许时不采集、不缓存、不发送事件。
 - 🚨 **全局错误自动捕获**：同步 JS 错误、未处理 Promise 拒绝、图片 / 脚本 / 其他资源加载失败。
+- 📝 **可选控制台监听**：默认关闭，可监听 `console.debug/info/warn/error` 的任意组合。
 - 🌐 **环境信息附加**：自动读取 `userAgent`、在线状态与网络有效类型，仅使用浏览器实际提供的字段。
-- 🧩 **自定义上下文**：通过 `getContext` 为每条事件附加业务信息，支持同步或异步回调。
+- 🧩 **自定义上下文**：通过 `getContext` 为浏览器错误事件附加业务信息，支持同步或异步回调。
 - 🔒 **端侧加密**：每条事件使用独立子密钥加密（HKDF-SHA-256 + AES-256-GCM）。
-- 🧯 **宿主无侵入**：只安装和移除自己的监听器，不覆盖宿主处理器，不影响事件传播。
+- 🧯 **宿主行为保留**：浏览器错误只使用自身监听器；可选控制台包装保留原有输出，不影响错误事件传播。
 - 🧱 **有界与降级**：上下文、事件字段、明文和信封均有大小上限，超限时按明确顺序降级。
 - 📦 **多种产物**：同时提供 ESM、CJS、IIFE 与 TypeScript 类型声明。
 
@@ -128,7 +129,7 @@ init({ serverUrl: 'https://collector.example/api-prefix', appId: 'a1b2c3d4e5f6g7
 createRoot(document.getElementById('root')!).render(<App />)
 ```
 
-> 首版捕获的是浏览器级错误。已被应用或框架自行捕获并吞掉的错误、`console.error` 调用不在自动捕获范围内。
+> 默认只捕获浏览器级错误。已被应用或框架自行捕获并吞掉的错误不在自动捕获范围内；控制台监听须显式开启。
 
 > 若页面配置了 CSP，需在 `connect-src` 中放行 `serverUrl`；自托管脚本时还需在 `script-src` 中放行脚本来源。
 
@@ -142,7 +143,8 @@ createRoot(document.getElementById('root')!).render(<App />)
 | --- | --- | --- | --- |
 | `serverUrl` | `string` | ✅ | 服务根地址，保留 API 路径前缀；支持 HTTP 与 HTTPS，须为不含凭据、查询与片段的绝对地址。 |
 | `appId` | `string` | ✅ | 服务端分配的应用标识，2 至 64 位小写字母与数字，且两者混合。 |
-| `getContext` | `() => Record<string, unknown> \| Promise<Record<string, unknown>>` | ❌ | 事件上下文回调，每个待处理事件发送前调用一次；重复初始化时以最新传入的回调为准。 |
+| `getContext` | `() => Record<string, unknown> \| Promise<Record<string, unknown>>` | ❌ | 浏览器错误事件的上下文回调，每个待处理错误发送前调用一次；控制台事件跳过回调；重复初始化时以最新传入为准。 |
+| `captureConsole` | `boolean \| readonly ConsoleLevel[]` | ❌ | 默认或 `false` 关闭；`true` 监听 `debug/info/warn/error` 四级；数组只监听指定级别，例如 `['debug', 'warn', 'error']`，空数组关闭。 |
 
 返回值 `status`：
 
@@ -151,14 +153,14 @@ createRoot(document.getElementById('root')!).render(<App />)
 | `allowed` | CID 已就绪且上报策略允许，SDK 已安装监听器并开始捕获。 |
 | `denied` | 上报策略拒绝当前应用 / CID。 |
 | `invalid_config` | 初始化参数不合法，未发起请求。 |
-| `unavailable` | 运行环境缺少必要能力（如 Fetch、Web Crypto、可读写存储、监听器支持等）。 |
+| `unavailable` | 运行环境缺少必要能力（如 Fetch、Web Crypto、可读写存储、监听器支持等），或选中的控制台方法无法包装；该状态不会与「仍在监控」并存，重复初始化遇到同样问题时 SDK 会先停止监控。 |
 | `failed` | 请求失败或服务端返回失败，部分情况包含 `errorCode`。 |
 | `conflict` | 已存在其他监控目标的初始化，需先 `stop()`。 |
 | `stopped` | 初始化过程被 `stop()` 中止。 |
 
 行为说明：
 
-- 同一 `serverUrl` 与 `appId` 视为同一监控目标。并发调用共用一次初始化；已允许后重复调用复用允许状态并更新 `getContext`；不同监控目标并发调用返回 `conflict`。
+- 同一 `serverUrl` 与 `appId` 视为同一监控目标。并发调用共用一次初始化；已允许后重复调用复用允许状态并更新 `getContext` 与 `captureConsole`；不同监控目标并发调用返回 `conflict`。若重复初始化时新的控制台级别无法生效，SDK 会停止监控并返回 `unavailable`，与首次初始化保持同一语义。
 - 停止后可再次初始化；已持久化的 CID 会按服务地址与应用隔离复用，且**不会通过初始化结果返回**。
 - 初始化会先确认运行环境能力，再签发 CID 与查询上报策略；无法监控时返回 `unavailable`，不会宣称已开始监控。
 
@@ -168,6 +170,7 @@ createRoot(document.getElementById('root')!).render(<App />)
 
 - 中止进行中的初始化请求与事件发送；
 - 移除 SDK 自己安装的浏览器监听器；
+- 停用 SDK 的控制台监听，并在宿主未另行改写方法时恢复原方法；
 - 清除上报允许状态；
 - **不删除** `localStorage` 中已持久化的 CID；
 - 不覆盖 `window.onerror`，不调用 `preventDefault` 或阻止事件传播。
@@ -191,7 +194,7 @@ createRoot(document.getElementById('root')!).render(<App />)
 - 已被应用或框架吞掉的错误；
 - Shadow DOM 内部元素的资源加载错误；
 - 其他 iframe 与 Worker 中的错误；
-- `console.error` 调用；
+- 默认关闭的 `console.debug/info/warn/error` 监听；
 - SDK 安装之前发生的错误；
 - 同一页面加载多份 SDK 副本；
 - Source Map 还原。
@@ -202,6 +205,22 @@ createRoot(document.getElementById('root')!).render(<App />)
 - 资源元素错误通过捕获阶段取得；跨域脚本可能只提供受限信息或没有堆栈。
 - 事件风暴受加密准备与上报请求各 5 个并发上限约束，超出的事件在组装前丢弃。
 - 没有离线队列；页面关闭或断网时允许丢失事件。
+
+### 可选控制台监听
+
+```ts
+await init({
+  serverUrl: 'https://collector.example/api-prefix',
+  appId: 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6',
+  captureConsole: ['debug', 'warn', 'error'],
+})
+```
+
+`captureConsole: true` 监听全部四级；数组可自由组合 `debug`、`info`、`warn`、`error`。只有服务端准入允许后才包装当前窗口的对应方法，原调用仍会照常执行。重复 `init` 可更新级别；`false` 或 `[]` 可关闭监听。选定方法无法包装时，初始化返回 `unavailable` 并停止监控（包括已允许后的重复初始化），可去掉或调整 `captureConsole` 后重新初始化。
+
+控制台输出经现有加密通道作为 `kind: 'other'`、对应 `level` 和 `name: 'console.<级别>'` 上报。多参数按顺序组成消息；对象只读取有限的自有数据属性，不调用 getter 或 `toJSON`，循环引用和深层内容使用占位文本。控制台事件不调用 `getContext`，防止回调自身输出日志形成递归；仍附加可获得的页面路径与浏览器环境信息。输出可能包含密码、令牌或业务数据，请在接入方确认日志内容后再开启。
+
+监听仅覆盖安装之后当前窗口中经过这四个 `console` 方法的调用；不覆盖其他 iframe、Worker、浏览器自身输出或 `console.trace/table/group` 等方法。事件仍受并发与体积限制，断网、页面关闭或事件风暴时可能丢失，不能保证逐条完整收集。
 
 ## 🧵 事件上下文
 
@@ -229,7 +248,7 @@ await init({
 })
 ```
 
-`getContext` 的结果作为独立的 `context` 字段加密上报，不会覆盖事件或协议字段。回调抛错、拒绝、超时或结果不合法时丢弃整段上下文，基础错误照常发送。
+`getContext` 的结果作为独立的 `context` 字段加密上报，不会覆盖事件或协议字段。回调抛错、拒绝、超时或结果不合法时丢弃整段上下文，基础错误照常发送。控制台事件跳过该回调。
 
 | 限制项 | 值 |
 | --- | --- |
@@ -298,6 +317,8 @@ await init({
 | 可读写的 `localStorage` | CID 持久化。 |
 | `window.addEventListener` / `removeEventListener`、`unhandledrejection` 支持 | 安装浏览器错误监听器。 |
 
+开启控制台监听时，选中的 `console` 方法还需可包装；此项在准入允许后检查，失败时返回 `unavailable`、清理已安装的监听器并停止监控。
+
 浏览器验收矩阵覆盖 Windows Chrome / Edge / Firefox、macOS Safari、Android Chrome 与 iOS Safari 的验收时当前及上一稳定版；目前源码与自动化测试已覆盖，真实浏览器矩阵与真实接收端联调尚未执行。原生微信小程序、SSR、Worker 与其他页面上下文不在首版承诺内。
 
 ## 📁 项目结构
@@ -306,6 +327,7 @@ await init({
 src/
 ├── index.ts        # init / stop、配置校验与初始化状态机
 ├── capture.ts      # 浏览器错误监听与事件组装
+├── console-capture.ts # 可选控制台监听与参数快照
 ├── event.ts        # 事件校验、裁剪、加密与发送
 ├── context.ts      # getContext 调用、超时与上下文归一化
 ├── environment.ts  # 浏览器环境信息采集

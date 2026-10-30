@@ -1,7 +1,8 @@
-import type { InitOptions, InitResult } from './types/index'
+import type { ConsoleLevel, InitOptions, InitResult } from './types/index'
 import { decodeBase64Url, encodeBase64Url } from './base64url'
 import { canCapture, installCapture, uninstallCapture } from './capture'
-import { activateEvents, stopEvents } from './event'
+import { configureConsoleCapture, uninstallConsoleCapture } from './console-capture'
+import { activateEvents, EVENT_LEVELS, stopEvents } from './event'
 import { isEnvelope, isRecord, request, type HttpReply } from './request'
 
 /**
@@ -12,6 +13,7 @@ interface Config {
   serverUrl: string
   appId: string
   getContext: InitOptions['getContext']
+  consoleLevels: ConsoleLevel[]
 }
 
 /** 应用标识格式：2 至 64 位小写字母与数字且两者混合，与后端协议常量一致。 */
@@ -39,12 +41,20 @@ let allowed = false
 function normalize(options: InitOptions): Config | undefined {
   if (!options || typeof options.serverUrl !== 'string' || typeof options.appId !== 'string' || !APP_ID_PATTERN.test(options.appId)) return undefined
   if (options.getContext !== undefined && typeof options.getContext !== 'function') return undefined
+  const captureConsole = options.captureConsole
+  let consoleLevels: ConsoleLevel[]
+  if (captureConsole === undefined || captureConsole === false) consoleLevels = []
+  else if (captureConsole === true) consoleLevels = [...EVENT_LEVELS]
+  else if (Array.isArray(captureConsole)) {
+    for (const level of captureConsole) if (!EVENT_LEVELS.includes(level)) return undefined
+    consoleLevels = [...new Set(captureConsole)]
+  } else return undefined
   if (options.serverUrl.includes('?') || options.serverUrl.includes('#')) return undefined
   try {
     const url = new URL(options.serverUrl)
     if (url.username || url.password || url.search || url.hash) return undefined
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined
-    return { serverUrl: url.href.replace(/\/+$/, ''), appId: options.appId, getContext: options.getContext }
+    return { serverUrl: url.href.replace(/\/+$/, ''), appId: options.appId, getContext: options.getContext, consoleLevels }
   } catch {
     return undefined
   }
@@ -172,6 +182,11 @@ async function initialize(config: Config, signal: AbortSignal, id: number): Prom
         },
         () => current?.getContext,
       )
+      if (!configureConsoleCapture(current?.consoleLevels ?? config.consoleLevels)) {
+        stopEvents()
+        uninstallCapture()
+        return { status: 'unavailable' }
+      }
     }
     return { status: result.body.data.allowed ? 'allowed' : 'denied' }
   } catch {
@@ -182,8 +197,9 @@ async function initialize(config: Config, signal: AbortSignal, id: number): Prom
 /**
  * 初始化 SDK
  * @description 校验配置后签发或复用 CID 并查询上报策略；同一监控目标的并发调用共用一次初始化，
- * 已允许后的重复调用复用允许状态并更新上下文回调，不同监控目标返回冲突
- * @param options 上报服务地址、应用标识与可选的上下文回调
+ * 已允许后的重复调用复用允许状态并更新上下文回调与控制台级别，不同监控目标返回冲突；
+ * 控制台级别无法生效时停止监控并返回不可用，保证该状态不对应仍在监控的实例
+ * @param options 上报服务地址、应用标识与可选的采集配置
  * @returns 根据上报策略判定的允许状态或失败原因
  */
 export function init(options: InitOptions): Promise<InitResult> {
@@ -191,13 +207,18 @@ export function init(options: InitOptions): Promise<InitResult> {
   if (!config) return Promise.resolve({ status: 'invalid_config' })
   if (operation) {
     if (!current || !sameTarget(current, config)) return Promise.resolve({ status: 'conflict' })
-    // 初始化进行中的同目标重复调用：共用同一过程，并以最新传入的上下文回调为准。
+    // 初始化进行中的同目标重复调用：共用同一过程，并以最新传入的上下文回调和控制台级别为准。
     current = config
     return operation
   }
   if (allowed) {
     if (!current || !sameTarget(current, config)) return Promise.resolve({ status: 'conflict' })
-    // 同一监控目标重复初始化：复用允许状态，仅更新上下文回调。
+    // 同一监控目标重复初始化：复用允许状态，更新上下文回调与控制台级别。
+    // 新级别无法生效时与首次初始化保持一致：unavailable 必须对应“未在监控”，因此先停止再返回。
+    if (!configureConsoleCapture(config.consoleLevels)) {
+      stop()
+      return Promise.resolve({ status: 'unavailable' })
+    }
     current = config
     return Promise.resolve({ status: 'allowed' })
   }
@@ -223,6 +244,7 @@ export function init(options: InitOptions): Promise<InitResult> {
  */
 export function stop(): void {
   generation++
+  uninstallConsoleCapture()
   uninstallCapture()
   stopEvents()
   controller?.abort()
@@ -232,5 +254,5 @@ export function stop(): void {
   allowed = false
 }
 
-export type { InitOptions, InitResult } from './types/index'
+export type { ConsoleLevel, InitOptions, InitResult } from './types/index'
 export default { init, stop }

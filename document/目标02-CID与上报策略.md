@@ -27,7 +27,7 @@ SDK 初始化后取得与当前服务端和应用对应的服务端签发 CID，
 | `PATCH v1/admin/projects/:appId` | `{name}`，修改名称 |
 | `GET v1/admin/log-report-projects/:appId/policy` | 查询项目上报策略，返回 `{reportPolicy}` |
 | `PATCH v1/admin/log-report-projects/:appId/policy` | `{reportPolicy:'all'\|'white'\|'black'}`，修改上报策略 |
-| `GET v1/admin/log-report-projects/:appId/cids` | `page`、`pageSize`，分页查询 CID |
+| `POST v1/admin/log-report-projects/:appId/cids` | 请求体支持 `page`、`pageSize`、`cid`、`issueIp`、`status`，分页查询 CID；CID 与 IP 完整精确匹配，CID 区分大小写，状态为 `valid`（有效）或 `revoked`（已撤销）；列表项 `lastReportTime` 为最近成功保存的未删除日志的服务端接收时间（Unix 秒），无日志时为 `null` |
 | `PATCH v1/admin/log-report-projects/:appId/cids/list` | `{cid,list:'none'\|'white'\|'black'}`，设置或移除名单 |
 | `POST v1/admin/log-report-projects/:appId/cids/revoke` | `{cid,reason}`，撤销 CID |
 

@@ -6,8 +6,8 @@ import { isEnvelope, isRecord, request } from './request'
 
 /** 允许的内部事件类型，与后端协议常量一致。 */
 const EVENT_KINDS = ['javascript', 'unhandledrejection', 'img', 'script', 'resource', 'other'] as const
-/** 允许的事件级别，与后端协议常量一致。 */
-const EVENT_LEVELS = ['debug', 'info', 'warn', 'error'] as const
+/** 允许的事件级别，与后端协议常量一致；公开类型 `ConsoleLevel` 由此派生，级别清单只在此维护。 */
+export const EVENT_LEVELS = ['debug', 'info', 'warn', 'error'] as const
 
 /**
  * 内部错误事件
@@ -32,6 +32,8 @@ export interface InternalEvent {
   source?: { url?: string; line?: number; column?: number }
   // 可选的环境信息，发送前与当前 runtime 自动采集值合并，显式字段优先
   environment?: Environment
+  // 控制台事件跳过上下文回调，避免回调自身输出日志造成递归上报；不进入协议明文
+  skipContext?: boolean
 }
 
 /** 单次内部事件发送结果：accepted 已接收，dropped 未发送或已丢弃，unknown 服务端判定重复，temporary_failure 重试耗尽。 */
@@ -346,7 +348,7 @@ async function prepareEvent(input: InternalEvent, current: Target): Promise<{ bo
   if (!validInput(input)) return undefined
   // 环境信息在等待上下文回调前采集，避免反映回调等待期间的状态变化。
   const environment = collectEnvironment(input.environment)
-  const context = await readContext(current.getContext, current.contextSession, encoder)
+  const context = input.skipContext ? undefined : await readContext(current.getContext, current.contextSession, encoder)
   if (signal.aborted) return undefined
   const eventId = encodeBase64Url(crypto.getRandomValues(new Uint8Array(16)))
   const iv = crypto.getRandomValues(new Uint8Array(12))

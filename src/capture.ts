@@ -38,10 +38,11 @@ export function canCapture(win: Window | undefined = globalThis.window): boolean
 
 /**
  * 读取当前页面路径
+ * @description 浏览器错误与控制台事件共用同一取值规则，避免两类事件的 `pagePath` 语义分叉
  * @param win 当前窗口
  * @returns 页面地址；不可读取时返回 undefined
  */
-function pagePath(win: Window): string | undefined {
+export function pagePath(win: Window): string | undefined {
   return readString(readField(win, 'location'), 'href')
 }
 
