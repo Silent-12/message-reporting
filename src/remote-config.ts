@@ -1,7 +1,7 @@
 /** 浏览器自动采集的事件类型。 */
 export const BROWSER_KINDS = ['javascript', 'unhandledrejection', 'img', 'script', 'resource'] as const
 /** 允许采集的控制台级别。 */
-export const EVENT_LEVELS = ['debug', 'info', 'warn', 'error'] as const
+export const EVENT_LEVELS = ['log', 'debug', 'info', 'warn', 'error'] as const
 /** 控制台事件可选字段。 */
 export const CONSOLE_FIELDS = ['name', 'stack', 'pagePath'] as const
 /** 自动附加的环境字段。 */

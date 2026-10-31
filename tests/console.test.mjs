@@ -10,7 +10,7 @@ function setup(allowed = true) {
   const state = installHost({ allowed })
   const calls = []
   state.win.console = Object.fromEntries(
-    ['debug', 'info', 'warn', 'error'].map((level) => [
+    ['log', 'debug', 'info', 'warn', 'error'].map((level) => [
       level,
       function (...args) {
         calls.push({ level, args })
@@ -59,6 +59,38 @@ test('默认关闭控制台；服务端开启后按级别采集且保留宿主�
     assert.equal(state.requests.filter((item) => item.url.endsWith('/config')).length, 2)
     sdk.stop()
     assert.equal(state.win.console.warn, originals.warn)
+  } finally {
+    cleanup()
+  }
+})
+
+test('仅选择 log 时采集 console.log，保留原始输出并在停止后还原', async () => {
+  const { state, calls, originals } = setup()
+  try {
+    state.config.console = { enabled: true, levels: ['info'], fields: ['name'] }
+    assert.equal((await sdk.init(opts)).status, 'allowed')
+    assert.equal(state.win.console.log, originals.log)
+    state.win.console.log('ignored')
+    state.config.console = { enabled: true, levels: ['log'], fields: ['name'] }
+    assert.equal((await sdk.init(opts)).status, 'allowed')
+    assert.equal(state.win.console.info, originals.info)
+    state.win.console.info('ignored too')
+    state.win.console.log('message', { count: 1 })
+    await settle(state, 1)
+    assert.deepEqual(
+      calls.map((item) => item.level),
+      ['log', 'info', 'log'],
+    )
+    assert.deepEqual(calls.at(-1).args, ['message', { count: 1 }])
+    assert.deepEqual(
+      state
+        .events()
+        .map(decrypt)
+        .map(({ kind, level, name, message }) => ({ kind, level, name, message })),
+      [{ kind: 'other', level: 'log', name: 'console.log', message: 'message {"count":1}' }],
+    )
+    sdk.stop()
+    assert.equal(state.win.console.log, originals.log)
   } finally {
     cleanup()
   }

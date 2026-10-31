@@ -23,7 +23,7 @@ SDK 以不干扰宿主为目标：不覆盖 `window.onerror`，不阻止事件�
 - 🪪 **CID 自动管理**：首次初始化获取 CID 并持久化，后续复用；同一监控目标并发初始化只执行一次。
 - ✅ **上报策略准入**：未取得明确允许时不采集、不缓存、不发送事件。
 - 🚨 **全局错误自动捕获**：同步 JS 错误、未处理 Promise 拒绝、图片 / 脚本 / 其他资源加载失败。
-- 📝 **服务端控制台监听**：按 APPID 开启，并指定 `console.debug/info/warn/error` 级别和可选字段。
+- 📝 **服务端控制台监听**：按 APPID 开启，并指定 `console.log/debug/info/warn/error` 级别和可选字段。
 - 🌐 **环境信息附加**：按服务端清单读取 `userAgent`、在线状态与网络有效类型，仅使用浏览器实际提供的字段。
 - 🧩 **自定义上下文**：服务端允许时通过 `getContext` 为浏览器错误事件附加业务信息，支持同步或异步回调。
 - 🔒 **端侧加密**：每条事件使用独立子密钥加密（HKDF-SHA-256 + AES-256-GCM）。
@@ -200,7 +200,7 @@ createRoot(document.getElementById('root')!).render(<App />)
 - 已被应用或框架吞掉的错误；
 - Shadow DOM 内部元素的资源加载错误；
 - 其他 iframe 与 Worker 中的错误；
-- 服务端未启用的 `console.debug/info/warn/error` 监听；
+- 服务端未启用的 `console.log/debug/info/warn/error` 监听；
 - SDK 安装之前发生的错误；
 - 同一页面加载多份 SDK 副本；
 - Source Map 还原。
@@ -216,11 +216,11 @@ createRoot(document.getElementById('root')!).render(<App />)
 
 AppPulse 后台按 APPID 设置浏览器错误类型、控制台开关及级别、控制台可选字段（`name`、`stack`、`pagePath`）、环境字段、`getContext` 开关和完整事件上报地址。控制台采集默认关闭；协议必填的消息、级别和时间等字段不能关闭。管理员通过复选框多选错误类型、级别与字段。
 
-控制台输出经现有加密通道作为 `kind: 'other'` 和对应 `level` 上报。`name: 'console.<级别>'` 仅在配置启用该字段时附加。多参数按顺序组成消息；对象只读取有限的自有数据属性，不调用 getter 或 `toJSON`，循环引用和深层内容使用占位文本。控制台事件不调用 `getContext`，防止回调自身输出日志形成递归；环境字段按项目配置附加。输出可能包含密码、令牌或业务数据，请在后台确认采集范围后再开启。
+控制台输出经现有加密通道作为 `kind: 'other'` 和对应 `level` 上报。`console.log` 与 `console.info` 分别由 `log` 与 `info` 控制，已有配置不会自动采集 `console.log`。`name: 'console.<级别>'` 仅在配置启用该字段时附加。多参数按顺序组成消息；对象只读取有限的自有数据属性，不调用 getter 或 `toJSON`，循环引用和深层内容使用占位文本。控制台事件不调用 `getContext`，防止回调自身输出日志形成递归；环境字段按项目配置附加。输出可能包含密码、令牌或业务数据，请在后台确认采集范围后再开启。
 
 服务端可按项目关闭任意浏览器错误类型、只附加指定环境字段，或禁止调用接入方的 `getContext`。配置缺失时使用当前默认行为：五类浏览器错误与三个环境字段开启，允许 `getContext`，控制台关闭。独立事件地址可为 HTTP(S) 绝对地址；接收端必须适配相同的加密协议、CID 与准入规则，并允许接入页面跨域请求。
 
-监听仅覆盖安装之后当前窗口中经过这四个 `console` 方法的调用；不覆盖其他 iframe、Worker、浏览器自身输出或 `console.trace/table/group` 等方法。事件仍受并发与体积限制，断网、页面关闭或事件风暴时可能丢失，不能保证逐条完整收集。
+监听仅覆盖安装之后当前窗口中经过已选中的 `console.log/debug/info/warn/error` 方法的调用；不覆盖其他 iframe、Worker、浏览器自身输出或 `console.trace/table/group` 等方法。事件仍受并发与体积限制，断网、页面关闭或事件风暴时可能丢失，不能保证逐条完整收集。
 
 ## 🧵 事件上下文
 
