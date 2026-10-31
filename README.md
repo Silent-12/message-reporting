@@ -2,7 +2,7 @@
 
 > 面向浏览器 HTML / Vue / React 应用的错误监控 SDK：自动捕获全局错误，可选监听控制台输出，附加环境信息与自定义上下文，经加密通道上报到 AppPulse 后端。
 
-![version](https://img.shields.io/badge/version-0.3.0-blue)
+![version](https://img.shields.io/badge/version-0.4.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![formats](https://img.shields.io/badge/formats-ESM%20%7C%20CJS%20%7C%20IIFE-orange)
 
@@ -36,8 +36,8 @@ SDK 以不干扰宿主为目标：不覆盖 `window.onerror`，不阻止事件�
 SDK 只通过 GitHub Release 分发，不发布到 npm。按版本安装 Release 中的 tarball：
 
 ```bash
-# npm（发布 v0.3.0 后可使用）
-npm install https://github.com/Silent-12/message-reporting/releases/download/v0.3.0/message-reporting-0.3.0.tgz
+# npm（发布 v0.4.0 后可使用）
+npm install https://github.com/Silent-12/message-reporting/releases/download/v0.4.0/message-reporting-0.4.0.tgz
 
 # pnpm add / yarn add 同样支持该 URL
 ```
@@ -394,11 +394,11 @@ SDK 不发布到 npm，发布流程由 GitHub Actions 完成：
 2. 打 tag 并推送，tag 必须与版本号一致：
 
 ```bash
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
-3. [`.github/workflows/release.yml`](.github/workflows/release.yml) 会执行 `npm ci --ignore-scripts`、`npm run release:pack`（内部包含 `npm run check`）并创建 Release，附件为 `message-reporting-0.3.0.tgz`。
+3. [`.github/workflows/release.yml`](.github/workflows/release.yml) 会执行 `npm ci --ignore-scripts`、`npm run release:pack`（内部包含 `npm run check`）并创建 Release，附件为 `message-reporting-0.4.0.tgz`。
 4. 消费端按上文安装 URL 使用；IIFE 用户可从附件中取 `dist/index.global.js` 自托管。
 
 本地手动打包（不上传）：
@@ -420,7 +420,7 @@ npm run release:pack
 
 ## ⚠️ 当前状态
 
-- 源码版本 **0.3.0**，尚未创建对应 Release。初始化、CID、上报策略、按 APPID 下发配置、自动捕获、环境信息、自定义上下文、加密发送与多格式产物均已实现并有自动化测试覆盖。
+- 源码版本 **0.4.0**。初始化、CID、上报策略、按 APPID 下发配置、自动捕获、环境信息、自定义上下文、加密发送与多格式产物均已实现并有自动化测试覆盖。
 - 真实浏览器矩阵、真实接收端联调、Vue / React 实际接入和生产部署验收尚未执行；首次接入建议先在测试环境完成「初始化 → 触发错误 → 接收端落库」的完整联调。
 - 首版没有离线队列、旧通道兼容层和 Source Map 还原能力；页面关闭或断网时允许丢失事件。
 - 分发方式为 GitHub Release tarball，不发布到 npm；Release 由 tag 触发的 GitHub Actions 生成。
