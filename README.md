@@ -170,6 +170,20 @@ createRoot(document.getElementById('root')!).render(<App />)
 - 停止后可再次初始化；已持久化的 CID 会按服务地址与应用隔离复用，且**不会通过初始化结果返回**。
 - 初始化先确认协议基础能力，再签发 CID、查询准入和配置；按配置需要浏览器监听时检查监听能力。配置失败不会沿用旧配置或默认值，返回 `failed` 并停止采集。
 
+### `getCid(options)`
+
+同步读取指定监控目标在当前页面来源下的本地 CID，可用于排查用户问题。传入与 `init` 一致的 `serverUrl` 和 `appId`：
+
+```ts
+import { getCid, init } from 'message-reporting'
+
+const options = { serverUrl: 'https://collector.example/api-prefix', appId: 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6' }
+const result = await init(options)
+const cid = getCid(options) // 包括 result.status 为 denied 的情况
+```
+
+该方法只读取并校验本地值，不发起请求或验证服务端是否仍认可该 CID。参数无效、存储不可访问、CID 尚未签发或本地值格式无效时返回 `null`；`stop()` 后仍可读取，服务端明确判定 CID 无效并清除本地值后返回 `null`。不同页面来源的存储不共享。CID 不能作为用户身份或鉴权凭据，展示或传递时应考虑隐私。
+
 ### `stop()`
 
 停止当前监控并清理 SDK 状态：

@@ -78,6 +78,28 @@ function validCid(value: unknown): value is string {
   }
 }
 
+/** 根据规范化目标构造 CID 存储键。 */
+function cidKey(config: Config): string {
+  return `__message_reporting_cid__:${encodeURIComponent(config.serverUrl)}:${config.appId}`
+}
+
+/**
+ * 读取指定监控目标的本地 CID
+ * @description 仅读取并校验本地存储，不签发 CID 或验证其服务端有效性。
+ * @param options 与初始化一致的服务地址和应用标识
+ * @returns 本地规范 CID；参数无效、存储不可用或没有有效值时返回 null
+ */
+export function getCid(options: Pick<InitOptions, 'serverUrl' | 'appId'>): string | null {
+  const config = normalize(options)
+  if (!config) return null
+  try {
+    const cid = globalThis.localStorage?.getItem(cidKey(config))
+    return validCid(cid) ? cid : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * 把响应转换为初始化失败结果
  * @description 仅当响应符合统一结构且 `data.errorCode` 为字符串时透传协议错误码
@@ -127,7 +149,7 @@ async function initialize(config: Config, signal: AbortSignal, id: number): Prom
   } catch {
     return { status: 'unavailable' }
   }
-  const key = `__message_reporting_cid__:${encodeURIComponent(config.serverUrl)}:${config.appId}`
+  const key = cidKey(config)
   try {
     let cid = storage.getItem(key)
     if (!validCid(cid)) {
@@ -248,4 +270,4 @@ export function stop(): void {
 }
 
 export type { InitOptions, InitResult } from './types/index'
-export default { init, stop }
+export default { init, stop, getCid }

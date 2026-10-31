@@ -20,16 +20,37 @@ function setup() {
   return installHost().entries
 }
 
-test('ESM、CJS 和 IIFE 只公开初始化与停止能力', async () => {
+test('ESM、CJS 和 IIFE 公开初始化、停止与 CID 读取能力', async () => {
   const cjs = createRequire(import.meta.url)('../dist/index.cjs')
   const sandbox = {}
   vm.runInNewContext(await readFile(new URL('../dist/index.global.js', import.meta.url), 'utf8'), sandbox)
   for (const exported of [sdk, cjs, sandbox.MessageReportingSDK]) {
     assert.equal(typeof exported.init, 'function')
     assert.equal(typeof exported.stop, 'function')
+    assert.equal(typeof exported.getCid, 'function')
+    assert.equal(typeof exported.default.getCid, 'function')
     assert.equal(exported.report, undefined)
     assert.equal(exported.reportImmediate, undefined)
   }
+})
+
+test('读取指定目标的本地 CID，支持拒绝准入和停止后排查', async () => {
+  setup()
+  assert.equal(sdk.getCid(opts), null)
+  globalThis.fetch = async (url) => (url.endsWith('/cids') ? envelope({ cid }) : envelope({ allowed: false }))
+  assert.deepEqual(await sdk.init(opts), { status: 'denied' })
+  assert.equal(sdk.getCid({ ...opts, serverUrl: 'https://EXAMPLE.test:443/prefix' }), cid)
+  assert.equal(sdk.getCid({ ...opts, appId: 'other1' }), null)
+  assert.equal(sdk.getCid({ ...opts, serverUrl: 'https://example.test/other' }), null)
+  sdk.stop()
+  assert.equal(sdk.getCid(opts), cid)
+  globalThis.localStorage.setItem('__message_reporting_cid__:https%3A%2F%2Fexample.test%2Fprefix:project1', 'invalid')
+  assert.equal(sdk.getCid(opts), null)
+  assert.equal(sdk.getCid({ ...opts, serverUrl: 'invalid' }), null)
+  globalThis.localStorage.getItem = () => {
+    throw new Error('storage unavailable')
+  }
+  assert.equal(sdk.getCid(opts), null)
 })
 
 test('签发并持久化 CID 后查询上报策略，停止后复用并保留路径前缀', async () => {
