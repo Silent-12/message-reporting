@@ -3,11 +3,10 @@ import { decodeBase64Url, encodeBase64Url, type ByteArray } from './base64url'
 import { createContextSession, readContext, type ContextProvider, type ContextSession } from './context'
 import { readEnvironment, type Environment } from './environment'
 import { isEnvelope, isRecord, request } from './request'
+import { BROWSER_KINDS, EVENT_LEVELS, type RemoteConfig } from './remote-config'
 
-/** 允许的内部事件类型，与后端协议常量一致。 */
-const EVENT_KINDS = ['javascript', 'unhandledrejection', 'img', 'script', 'resource', 'other'] as const
-/** 允许的事件级别，与后端协议常量一致；公开类型 `ConsoleLevel` 由此派生，级别清单只在此维护。 */
-export const EVENT_LEVELS = ['debug', 'info', 'warn', 'error'] as const
+/** 允许的内部事件类型，由服务端浏览器采集类型与内部事件类型派生。 */
+const EVENT_KINDS = [...BROWSER_KINDS, 'other'] as const
 
 /**
  * 内部错误事件
@@ -44,8 +43,8 @@ type EventSendResult = 'accepted' | 'dropped' | 'unknown' | 'temporary_failure'
  * @description 保存发送事件所需的服务地址、应用标识、CID 与拒绝回调，并提供本代次的停止信号。
  */
 interface Target {
-  // 保留路径前缀的服务根地址
-  serverUrl: string
+  // 事件接收地址：配置指定的完整地址或初始化服务的默认事件地址
+  eventUrl: string
   // 服务端分配的应用标识
   appId: string
   // 服务端签发的规范 CID
@@ -54,6 +53,7 @@ interface Target {
   onRejected: (code: string) => void
   // 读取当前初始化配置中最新上下文回调的访问器
   getContext: ContextProvider
+  config: RemoteConfig
   // 本代次的上下文回调并发额度
   contextSession: ContextSession
   // 本代次的停止控制器
@@ -88,15 +88,23 @@ const MAX_ENVIRONMENT_EFFECTIVE_TYPE_BYTES = 64
 /**
  * 激活当前初始化代次的内部发送器
  * @description 先停止上一代次，再记录本次发送目标
- * @param serverUrl 保留路径前缀的服务根地址
+ * @param eventUrl 事件接收地址，可为配置指定的独立完整地址
  * @param appId 服务端分配的应用标识
  * @param cid 服务端签发的规范 CID
  * @param onRejected 服务端判定 CID 无效或未授权时的回调
  * @param getContext 读取当前初始化配置中最新上下文回调的访问器
+ * @param config 服务端按应用下发的采集配置
  */
-export function activateEvents(serverUrl: string, appId: string, cid: string, onRejected: (code: string) => void, getContext: ContextProvider): void {
+export function activateEvents(
+  eventUrl: string,
+  appId: string,
+  cid: string,
+  onRejected: (code: string) => void,
+  getContext: ContextProvider,
+  config: RemoteConfig,
+): void {
   stopEvents()
-  target = { serverUrl, appId, cid, onRejected, getContext, contextSession: createContextSession(), controller: new AbortController() }
+  target = { eventUrl, appId, cid, onRejected, getContext, config, contextSession: createContextSession(), controller: new AbortController() }
 }
 
 /** 停止当前发送器及其等待中的操作。 */
@@ -181,17 +189,24 @@ function describe(value: unknown): string {
  * 合并自动采集与显式传入的环境信息
  * @description 当前 runtime 可读取的字段作为基础，显式传入且类型正确的字段优先；全部缺失时返回 undefined
  * @param explicit 内部调用方传入的环境信息
+ * @param fields 服务端允许采集的环境字段
  * @returns 待裁剪的环境信息；无可用字段时返回 undefined
  */
-function collectEnvironment(explicit: InternalEvent['environment']): Environment | undefined {
-  const collected = readEnvironment()
+function collectEnvironment(explicit: InternalEvent['environment'], fields: readonly (keyof Environment)[]): Environment | undefined {
+  const collected = readEnvironment(fields)
   const environment: Environment = {}
-  if (collected?.userAgent !== undefined) environment.userAgent = collected.userAgent
-  if (collected?.online !== undefined) environment.online = collected.online
-  if (collected?.effectiveType !== undefined) environment.effectiveType = collected.effectiveType
-  if (typeof explicit?.userAgent === 'string') environment.userAgent = explicit.userAgent
-  if (typeof explicit?.online === 'boolean') environment.online = explicit.online
-  if (typeof explicit?.effectiveType === 'string') environment.effectiveType = explicit.effectiveType
+  if (fields.includes('userAgent')) {
+    if (collected?.userAgent !== undefined) environment.userAgent = collected.userAgent
+    if (typeof explicit?.userAgent === 'string') environment.userAgent = explicit.userAgent
+  }
+  if (fields.includes('online')) {
+    if (collected?.online !== undefined) environment.online = collected.online
+    if (typeof explicit?.online === 'boolean') environment.online = explicit.online
+  }
+  if (fields.includes('effectiveType')) {
+    if (collected?.effectiveType !== undefined) environment.effectiveType = collected.effectiveType
+    if (typeof explicit?.effectiveType === 'string') environment.effectiveType = explicit.effectiveType
+  }
   return Object.keys(environment).length ? environment : undefined
 }
 
@@ -347,8 +362,8 @@ async function prepareEvent(input: InternalEvent, current: Target): Promise<{ bo
   const encoder = new TextEncoder()
   if (!validInput(input)) return undefined
   // 环境信息在等待上下文回调前采集，避免反映回调等待期间的状态变化。
-  const environment = collectEnvironment(input.environment)
-  const context = input.skipContext ? undefined : await readContext(current.getContext, current.contextSession, encoder)
+  const environment = collectEnvironment(input.environment, current.config.environmentFields)
+  const context = input.skipContext || !current.config.contextEnabled ? undefined : await readContext(current.getContext, current.contextSession, encoder)
   if (signal.aborted) return undefined
   const eventId = encodeBase64Url(crypto.getRandomValues(new Uint8Array(16)))
   const iv = crypto.getRandomValues(new Uint8Array(12))
@@ -393,7 +408,7 @@ export async function sendInternalEvent(input: InternalEvent): Promise<EventSend
   if (!prepared || signal.aborted) return 'dropped'
   let blocked = false
   try {
-    const reply = await request(`${current.serverUrl}/v1/events`, prepared.body, signal, {
+    const reply = await request(current.eventUrl, prepared.body, signal, {
       beforeAttempt: () => {
         if (Math.abs(Date.now() - prepared.sentAt) > SENT_AT_WINDOW || activeRequests >= MAX_EVENT_CONCURRENCY) {
           blocked = true
@@ -412,6 +427,7 @@ export async function sendInternalEvent(input: InternalEvent): Promise<EventSend
     if (reply.status === 200) return reply.body.data === null ? 'accepted' : 'dropped'
     if (isRecord(reply.body.data)) {
       const code = reply.body.data.errorCode
+      // 仅 CID 失效与策略拒绝停止发送；配置不匹配（CONFIG_REJECTED）只丢弃当前事件。
       if ((reply.status === 401 && code === 'CID_INVALID') || (reply.status === 403 && code === 'NOT_ALLOWED')) current.onRejected(code)
       if (reply.status === 409 && code === 'REPLAYED') return 'unknown'
     }

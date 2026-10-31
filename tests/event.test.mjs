@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
-import { cid, decrypt, envelope, installHost, opts } from './support/host.mjs'
+import { cid, decrypt, defaultConfig, envelope, installHost, opts } from './support/host.mjs'
 
 // 将公开入口和内部发送器构建在同一模块，测试生产源码但不新增公开导出。
 const bundle = await build({
@@ -79,6 +79,7 @@ test('生产发送器按公开向量固定参数生成互通密文', async () =>
   globalThis.fetch = async (url, options) => {
     if (url.endsWith('/cids')) return envelope({ cid: vector.cid })
     if (url.endsWith('/admission')) return envelope({ allowed: true })
+    if (url.endsWith('/config')) return envelope(defaultConfig())
     sent = JSON.parse(options.body)
     return envelope(null)
   }
@@ -394,8 +395,8 @@ test('实际未结束请求超过五个时丢弃，停止后的迟到响应不�
     await new Promise((resolve) => setTimeout(resolve, 5))
     const counted = requests.length
     assert.deepEqual(await sdk.init(opts), { status: 'allowed' })
-    // 旧代次的迟到 401 不得清理当前 CID 或停止发送器，因此既不再签发也不重新查询。
-    assert.equal(requests.length, counted)
+    // 旧代次的迟到 401 不得清理当前 CID；重复初始化仍会重新查询准入与配置。
+    assert.equal(requests.length, counted + 2)
     assert.equal(storage.size, 1)
     release = true
     assert.equal(await sdk.sendInternalEvent(event), 'accepted')
@@ -456,6 +457,25 @@ test('拒绝上报保留 CID，普通 401 和无效响应不会终止状态或�
     assert.equal(await sdk.sendInternalEvent(event), 'dropped')
     assert.equal(await sdk.sendInternalEvent(event), 'dropped')
     assert.equal(count, 3)
+    assert.equal(storage.size, 1)
+  } finally {
+    sdk.stop()
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('配置不匹配只丢弃当前事件，不停止采集', async () => {
+  let count = 0
+  const storage = setup(async () => {
+    count++
+    return envelope({ errorCode: 'CONFIG_REJECTED' }, 403)
+  })
+  try {
+    await sdk.init(opts)
+    assert.equal(await sdk.sendInternalEvent(event), 'dropped')
+    assert.equal(await sdk.sendInternalEvent(event), 'dropped')
+    // 仍能继续发起事件请求，说明 sendInternalEvent 没有触发停止；CID 也未被清理。
+    assert.equal(count, 2)
     assert.equal(storage.size, 1)
   } finally {
     sdk.stop()

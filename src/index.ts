@@ -1,9 +1,10 @@
-import type { ConsoleLevel, InitOptions, InitResult } from './types/index'
+import type { InitOptions, InitResult } from './types/index'
 import { decodeBase64Url, encodeBase64Url } from './base64url'
 import { canCapture, installCapture, uninstallCapture } from './capture'
 import { configureConsoleCapture, uninstallConsoleCapture } from './console-capture'
-import { activateEvents, EVENT_LEVELS, stopEvents } from './event'
+import { activateEvents, stopEvents } from './event'
 import { isEnvelope, isRecord, request, type HttpReply } from './request'
+import { validRemoteConfig } from './remote-config'
 
 /**
  * 规范化后的初始化目标
@@ -13,7 +14,6 @@ interface Config {
   serverUrl: string
   appId: string
   getContext: InitOptions['getContext']
-  consoleLevels: ConsoleLevel[]
 }
 
 /** 应用标识格式：2 至 64 位小写字母与数字且两者混合，与后端协议常量一致。 */
@@ -41,20 +41,12 @@ let allowed = false
 function normalize(options: InitOptions): Config | undefined {
   if (!options || typeof options.serverUrl !== 'string' || typeof options.appId !== 'string' || !APP_ID_PATTERN.test(options.appId)) return undefined
   if (options.getContext !== undefined && typeof options.getContext !== 'function') return undefined
-  const captureConsole = options.captureConsole
-  let consoleLevels: ConsoleLevel[]
-  if (captureConsole === undefined || captureConsole === false) consoleLevels = []
-  else if (captureConsole === true) consoleLevels = [...EVENT_LEVELS]
-  else if (Array.isArray(captureConsole)) {
-    for (const level of captureConsole) if (!EVENT_LEVELS.includes(level)) return undefined
-    consoleLevels = [...new Set(captureConsole)]
-  } else return undefined
   if (options.serverUrl.includes('?') || options.serverUrl.includes('#')) return undefined
   try {
     const url = new URL(options.serverUrl)
     if (url.username || url.password || url.search || url.hash) return undefined
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined
-    return { serverUrl: url.href.replace(/\/+$/, ''), appId: options.appId, getContext: options.getContext, consoleLevels }
+    return { serverUrl: url.href.replace(/\/+$/, ''), appId: options.appId, getContext: options.getContext }
   } catch {
     return undefined
   }
@@ -100,9 +92,9 @@ function toFailureResult(reply: HttpReply): InitResult {
 }
 
 /**
- * 检查运行环境并完成 CID 签发与上报策略查询
+ * 检查运行环境并完成 CID 签发、准入与采集配置查询
  * @description 先确认协议所需能力与可读写持久存储，再按服务地址与应用隔离读取或签发 CID，
- * 写入后可重新读取才继续查询上报策略；停止信号或代次变化时返回 stopped，且不写入任何状态
+ * 写入后可重新读取才继续查询准入；准入通过后拉取配置，停止信号或代次变化时返回 stopped，且不写入任何状态
  * @param config 规范化后的初始化目标
  * @param signal 本次初始化的停止信号
  * @param id 本次初始化的代次
@@ -112,7 +104,7 @@ async function initialize(config: Config, signal: AbortSignal, id: number): Prom
   let storage: Storage
   try {
     // 目标 01 要求缺失安全随机源、Web Crypto、UTF-8 编解码或 Fetch 时返回明确不可用状态；
-    // 浏览器监听能力同样在发起请求前检查，避免无法采集的环境仍签发 CID 或查询上报策略。
+    // 浏览器监听能力在取得配置后按启用的采集来源检查，避免关闭采集时仍要求监听能力。
     if (
       typeof fetch !== 'function' ||
       typeof atob !== 'function' ||
@@ -120,8 +112,7 @@ async function initialize(config: Config, signal: AbortSignal, id: number): Prom
       typeof TextEncoder !== 'function' ||
       typeof TextDecoder !== 'function' ||
       !globalThis.crypto?.subtle ||
-      !globalThis.crypto?.getRandomValues ||
-      !canCapture()
+      !globalThis.crypto?.getRandomValues
     )
       return { status: 'unavailable' }
     storage = globalThis.localStorage
@@ -162,33 +153,42 @@ async function initialize(config: Config, signal: AbortSignal, id: number): Prom
     if (result.status !== 200 || !isEnvelope(result) || !isRecord(result.body.data) || typeof result.body.data.allowed !== 'boolean') {
       return toFailureResult(result)
     }
-    if (result.body.data.allowed) {
-      // 无法安装浏览器监听器时不得宣称已允许监控，也不进行任何上报。
-      if (!installCapture()) return { status: 'unavailable' }
-      activateEvents(
-        config.serverUrl,
-        config.appId,
-        cid,
-        (code) => {
-          if (id !== generation) return
-          if (code === 'CID_INVALID') {
-            try {
-              forgetCid()
-            } catch {
-              // 存储不可用时仍停止发送。
-            }
-          }
-          stop()
-        },
-        () => current?.getContext,
-      )
-      if (!configureConsoleCapture(current?.consoleLevels ?? config.consoleLevels)) {
-        stopEvents()
-        uninstallCapture()
-        return { status: 'unavailable' }
-      }
+    if (!result.body.data.allowed) return { status: 'denied' }
+    const configured = await request(`${config.serverUrl}/v1/config`, JSON.stringify({ appId: config.appId, cid }), signal)
+    if (signal.aborted || id !== generation) return { status: 'stopped' }
+    if (!configured) return { status: 'failed', errorCode: 'TEMPORARY_FAILURE' }
+    if (isEnvelope(configured) && configured.status === 401 && isRecord(configured.body.data) && configured.body.data.errorCode === 'CID_INVALID') {
+      forgetCid()
+      return { status: 'failed', errorCode: 'CID_INVALID' }
     }
-    return { status: result.body.data.allowed ? 'allowed' : 'denied' }
+    if (configured.status !== 200 || !isEnvelope(configured) || !validRemoteConfig(configured.body.data)) return toFailureResult(configured)
+    const remote = configured.body.data
+    if (remote.browserKinds.length === 0 && (!remote.console.enabled || remote.console.levels.length === 0)) return { status: 'disabled' }
+    if (remote.browserKinds.length && (!canCapture() || !installCapture(remote.browserKinds))) return { status: 'unavailable' }
+    activateEvents(
+      remote.eventUrl ?? `${config.serverUrl}/v1/events`,
+      config.appId,
+      cid,
+      (code) => {
+        if (id !== generation) return
+        if (code === 'CID_INVALID') {
+          try {
+            forgetCid()
+          } catch {
+            // 存储不可用时仍停止发送。
+          }
+        }
+        stop()
+      },
+      () => current?.getContext,
+      remote,
+    )
+    if (!configureConsoleCapture(remote.console.enabled ? remote.console.levels : [], remote.console.fields)) {
+      stopEvents()
+      uninstallCapture()
+      return { status: 'unavailable' }
+    }
+    return { status: 'allowed' }
   } catch {
     return { status: 'unavailable' }
   }
@@ -196,34 +196,27 @@ async function initialize(config: Config, signal: AbortSignal, id: number): Prom
 
 /**
  * 初始化 SDK
- * @description 校验配置后签发或复用 CID 并查询上报策略；同一监控目标的并发调用共用一次初始化，
- * 已允许后的重复调用复用允许状态并更新上下文回调与控制台级别，不同监控目标返回冲突；
- * 控制台级别无法生效时停止监控并返回不可用，保证该状态不对应仍在监控的实例
- * @param options 上报服务地址、应用标识与可选的采集配置
- * @returns 根据上报策略判定的允许状态或失败原因
+ * @description 签发或复用 CID 后依次查询准入与采集配置；同一监控目标的并发调用共用一次初始化，
+ * 后续重复调用暂停旧采集并重新查询，不同监控目标返回冲突；配置无法生效时停止监控
+ * @param options 上报服务地址、应用标识与可选的上下文回调
+ * @returns 准入与采集配置决定的状态或失败原因
  */
 export function init(options: InitOptions): Promise<InitResult> {
   const config = normalize(options)
   if (!config) return Promise.resolve({ status: 'invalid_config' })
   if (operation) {
     if (!current || !sameTarget(current, config)) return Promise.resolve({ status: 'conflict' })
-    // 初始化进行中的同目标重复调用：共用同一过程，并以最新传入的上下文回调和控制台级别为准。
+    // 初始化进行中的同目标重复调用共用过程，并使用最新上下文回调。
     current = config
     return operation
   }
-  if (allowed) {
-    if (!current || !sameTarget(current, config)) return Promise.resolve({ status: 'conflict' })
-    // 同一监控目标重复初始化：复用允许状态，更新上下文回调与控制台级别。
-    // 新级别无法生效时与首次初始化保持一致：unavailable 必须对应“未在监控”，因此先停止再返回。
-    if (!configureConsoleCapture(config.consoleLevels)) {
-      stop()
-      return Promise.resolve({ status: 'unavailable' })
-    }
-    current = config
-    return Promise.resolve({ status: 'allowed' })
-  }
+  if (allowed && (!current || !sameTarget(current, config))) return Promise.resolve({ status: 'conflict' })
   // 需要构造取消控制器，缺少时按不可用处理。
   if (typeof AbortController !== 'function') return Promise.resolve({ status: 'unavailable' })
+  uninstallConsoleCapture()
+  uninstallCapture()
+  stopEvents()
+  allowed = false
   current = config
   controller = new AbortController()
   const id = ++generation
@@ -254,5 +247,5 @@ export function stop(): void {
   allowed = false
 }
 
-export type { ConsoleLevel, InitOptions, InitResult } from './types/index'
+export type { InitOptions, InitResult } from './types/index'
 export default { init, stop }

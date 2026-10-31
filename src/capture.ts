@@ -1,5 +1,6 @@
 import { canSendEvent, cleanUrl, sendInternalEvent, type InternalEvent } from './event'
 import { readField, readString } from './safe-read'
+import type { BROWSER_KINDS } from './remote-config'
 
 // 浏览器自动捕获：仅在初始化确认允许上报后安装窗口级监听器，采集同步 JavaScript 错误、
 // 未处理 Promise 拒绝与资源加载错误，交给内部发送器异步上报；不覆盖宿主已有的全局处理器，
@@ -181,11 +182,12 @@ function report(seen: WeakSet<Event>, event: Event, build: () => InternalEvent):
 
 /**
  * 安装浏览器错误监听器
- * @description 资源错误需要捕获阶段监听，脚本运行错误与未处理拒绝均从窗口取得；重复调用先移除上一次安装。
- * 上一次安装的监听器无法移除时不再注册，避免同一事件被重复上报；缺少能力或安装抛错时返回 false，不改变宿主页面
+ * @description 资源错误需要捕获阶段监听，脚本运行错误与未处理拒绝均从窗口取得；运行时按配置过滤事件类型。
+ * 重复调用先移除上一次安装，上一次安装的监听器无法移除时不再注册，避免同一事件被重复上报；缺少能力或安装抛错时返回 false，不改变宿主页面
+ * @param kinds 需要采集的浏览器事件类型
  * @returns 是否安装成功
  */
-export function installCapture(): boolean {
+export function installCapture(kinds: readonly (typeof BROWSER_KINDS)[number][]): boolean {
   uninstallCapture()
   // 仍有未能移除的监听器时继续注册会造成重复采集。
   if (installed) return false
@@ -194,13 +196,18 @@ export function installCapture(): boolean {
     if (!canCapture(win)) return false
     const seen = new WeakSet<Event>()
     const onError = (event: Event): void => {
-      report(seen, event, () => {
+      try {
         const target = readField(event, 'target')
         const kind = elementKind(target)
-        return kind === undefined ? scriptInput(win, event) : resourceInput(win, kind, target)
-      })
+        if (!kinds.includes(kind ?? 'javascript')) return
+        report(seen, event, () => (kind === undefined ? scriptInput(win, event) : resourceInput(win, kind, target)))
+      } catch {
+        // 宿主事件属性读取失败时忽略本次事件。
+      }
     }
-    const onRejection = (event: Event): void => report(seen, event, () => rejectionInput(win, event))
+    const onRejection = (event: Event): void => {
+      if (kinds.includes('unhandledrejection')) report(seen, event, () => rejectionInput(win, event))
+    }
     win.addEventListener('error', onError, true)
     // 先记录已注册的监听器再注册第二个：第二个失败且回滚也失败时，仍可在后续停止或重新初始化时重试移除。
     installed = { win, onError }

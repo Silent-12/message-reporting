@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as sdk from '../dist/index.js'
-import { cid, decrypt, envelope, installHost, opts, uninstallHost } from './support/host.mjs'
+import { cid, decrypt, defaultConfig, envelope, installHost, opts, uninstallHost } from './support/host.mjs'
 
 const nativeFetch = globalThis.fetch
 
@@ -88,8 +88,8 @@ test('仅在明确允许后安装监听器，重复初始化不重复注册，�
     )
     assert.equal(state.win.onerror, hostHandler)
     assert.equal((await sdk.init(opts)).status, 'allowed')
-    // 重复初始化不得移除后重新注册：SDK 只发起过两次注册。
-    assert.equal(state.addCalls.length, 3)
+    // 重复初始化重新拉取配置并重装采集，当前仍只有一组监听器。
+    assert.equal(state.addCalls.length, 5)
     assert.equal(sdkListeners().length, 2)
     sdk.stop()
     assert.deepEqual(
@@ -102,7 +102,7 @@ test('仅在明确允许后安装监听器，重复初始化不重复注册，�
     assert.equal(state.events().length, 0)
     // 停止后重新初始化会重新安装监听器并恢复捕获。
     assert.equal((await sdk.init(opts)).status, 'allowed')
-    assert.equal(state.addCalls.length, 5)
+    assert.equal(state.addCalls.length, 7)
     assert.equal(sdkListeners().length, 2)
     state.dispatch('error', jsErrorEvent(state))
     await settle(state, 1)
@@ -319,6 +319,7 @@ test('事件风暴受并发上限约束且不产生未处理拒绝', async () =>
   globalThis.fetch = (url, options) => {
     if (url.endsWith('/cids')) return Promise.resolve(envelope({ cid }))
     if (url.endsWith('/admission')) return Promise.resolve(envelope({ allowed: true }))
+    if (url.endsWith('/config')) return Promise.resolve(envelope(defaultConfig()))
     state.requests.push({ url, options })
     return new Promise((resolve) => pending.push(resolve))
   }
@@ -368,6 +369,7 @@ test('事件发送网络失败按既有重试处理，不产生递归上报或�
   globalThis.fetch = (url, options) => {
     if (url.endsWith('/cids')) return Promise.resolve(envelope({ cid }))
     if (url.endsWith('/admission')) return Promise.resolve(envelope({ allowed: true }))
+    if (url.endsWith('/config')) return Promise.resolve(envelope(defaultConfig()))
     state.requests.push({ url, options })
     eventCalls++
     return Promise.reject(new TypeError('network'))
@@ -389,22 +391,22 @@ test('事件发送网络失败按既有重试处理，不产生递归上报或�
   }
 })
 
-test('缺少监听能力或不支持 unhandledrejection 时初始化返回不可用且不发起请求', async () => {
+test('缺少监听能力或不支持 unhandledrejection 时配置拉取后返回不可用', async () => {
   const state = setup()
   try {
     Object.defineProperty(globalThis, 'window', { configurable: true, value: {} })
     assert.deepEqual(await sdk.init(opts), { status: 'unavailable' })
-    assert.equal(state.requests.length, 0)
+    assert.equal(state.requests.length, 3)
     Reflect.deleteProperty(globalThis, 'window')
     assert.deepEqual(await sdk.init(opts), { status: 'unavailable' })
-    assert.equal(state.requests.length, 0)
-    // 浏览器对未知事件类型的 addEventListener 不会报错，缺少该能力时必须在发起请求前判定不可用。
+    assert.equal(state.requests.length, 5)
+    // 浏览器对未知事件类型的 addEventListener 不会报错，配置需要浏览器采集时必须判定不可用。
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: { addEventListener() {}, removeEventListener() {} },
     })
     assert.deepEqual(await sdk.init(opts), { status: 'unavailable' })
-    assert.equal(state.requests.length, 0)
+    assert.equal(state.requests.length, 7)
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {

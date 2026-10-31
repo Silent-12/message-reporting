@@ -1,6 +1,6 @@
 {
   "name": "message-reporting",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Browser SDK for error monitoring, with CID initialization and reporting policy checks.",
   "license": "MIT",
   "private": true,

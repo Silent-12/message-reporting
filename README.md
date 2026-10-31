@@ -2,19 +2,19 @@
 
 > 面向浏览器 HTML / Vue / React 应用的错误监控 SDK：自动捕获全局错误，可选监听控制台输出，附加环境信息与自定义上下文，经加密通道上报到 AppPulse 后端。
 
-![version](https://img.shields.io/badge/version-0.2.0-blue)
+![version](https://img.shields.io/badge/version-0.3.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![formats](https://img.shields.io/badge/formats-ESM%20%7C%20CJS%20%7C%20IIFE-orange)
 
 ## 📖 项目简介
 
-`message-reporting` 是 AppPulse 错误监控体系的浏览器端 SDK。业务代码只需初始化一次，SDK 会在确认允许上报后自动完成错误采集与上报：
+`message-reporting` 是 AppPulse 错误监控体系的浏览器端 SDK。每次初始化都会查询准入与当前 APPID 的采集配置，取得有效配置后自动完成错误采集与上报：
 
 1. 🪪 初始化时签发或复用 **CID**，按服务地址与应用隔离持久化到 `localStorage`；
-2. ✅ 向服务端查询**上报策略**，只有明确允许后才开始监控；
-3. 🚨 自动捕获 JavaScript 运行错误、未处理的 Promise 拒绝和资源加载失败；
-4. 🌐 附加浏览器环境信息，并按需调用 `getContext` 补充业务上下文；
-5. 🔒 校验、裁剪并加密事件，通过 `POST /v1/events` 上报。
+2. ✅ 向服务端查询**上报策略**和按 APPID 下发的采集配置；
+3. 🚨 按配置捕获 JavaScript 运行错误、未处理的 Promise 拒绝、资源加载失败和控制台输出；
+4. 🌐 按配置附加环境信息，并按需调用 `getContext` 补充业务上下文；
+5. 🔒 校验、裁剪并加密事件，通过配置指定的地址上报。
 
 SDK 以不干扰宿主为目标：不覆盖 `window.onerror`，不阻止事件默认行为或传播。开启控制台监听时会包装选中的 `console` 方法并保留原有输出；采集与发送过程中的异常不会抛给业务代码。
 
@@ -23,9 +23,9 @@ SDK 以不干扰宿主为目标：不覆盖 `window.onerror`，不阻止事件�
 - 🪪 **CID 自动管理**：首次初始化获取 CID 并持久化，后续复用；同一监控目标并发初始化只执行一次。
 - ✅ **上报策略准入**：未取得明确允许时不采集、不缓存、不发送事件。
 - 🚨 **全局错误自动捕获**：同步 JS 错误、未处理 Promise 拒绝、图片 / 脚本 / 其他资源加载失败。
-- 📝 **可选控制台监听**：默认关闭，可监听 `console.debug/info/warn/error` 的任意组合。
-- 🌐 **环境信息附加**：自动读取 `userAgent`、在线状态与网络有效类型，仅使用浏览器实际提供的字段。
-- 🧩 **自定义上下文**：通过 `getContext` 为浏览器错误事件附加业务信息，支持同步或异步回调。
+- 📝 **服务端控制台监听**：按 APPID 开启，并指定 `console.debug/info/warn/error` 级别和可选字段。
+- 🌐 **环境信息附加**：按服务端清单读取 `userAgent`、在线状态与网络有效类型，仅使用浏览器实际提供的字段。
+- 🧩 **自定义上下文**：服务端允许时通过 `getContext` 为浏览器错误事件附加业务信息，支持同步或异步回调。
 - 🔒 **端侧加密**：每条事件使用独立子密钥加密（HKDF-SHA-256 + AES-256-GCM）。
 - 🧯 **宿主行为保留**：浏览器错误只使用自身监听器；可选控制台包装保留原有输出，不影响错误事件传播。
 - 🧱 **有界与降级**：上下文、事件字段、明文和信封均有大小上限，超限时按明确顺序降级。
@@ -36,8 +36,8 @@ SDK 以不干扰宿主为目标：不覆盖 `window.onerror`，不阻止事件�
 SDK 只通过 GitHub Release 分发，不发布到 npm。按版本安装 Release 中的 tarball：
 
 ```bash
-# npm（示例版本 0.2.0）
-npm install https://github.com/Silent-12/message-reporting/releases/download/v0.2.0/message-reporting-0.2.0.tgz
+# npm（发布 v0.3.0 后可使用）
+npm install https://github.com/Silent-12/message-reporting/releases/download/v0.3.0/message-reporting-0.3.0.tgz
 
 # pnpm add / yarn add 同样支持该 URL
 ```
@@ -47,6 +47,12 @@ npm install https://github.com/Silent-12/message-reporting/releases/download/v0.
 ```html
 <script src="/cdn/message-reporting/index.global.js"></script>
 ```
+
+### 从 0.2 升级
+
+- `captureConsole` 已移除，控制台采集改由 AppPulse 后台按 APPID 配置；升级前先在后台开启控制台采集并选择级别与可选字段。
+- 公开类型 `ConsoleLevel` 已移除；如显式引用了该类型，请删除该类型依赖，或使用服务端配置返回的级别值。
+- 新 SDK 初始化依赖接收端 `POST {serverUrl}/v1/config`；请先升级接收端，否则初始化会因配置请求失败返回 `failed`。
 
 ## 🚀 快速开始
 
@@ -71,7 +77,7 @@ const result = await init({
 if (result.status === 'allowed') {
   // CID 已就绪且上报策略允许，SDK 已开始自动捕获浏览器错误。
 } else {
-  // denied / invalid_config / unavailable / failed / conflict / stopped
+  // disabled / denied / invalid_config / unavailable / failed / conflict / stopped
   console.warn('错误监控未启动', result)
 }
 ```
@@ -131,7 +137,7 @@ createRoot(document.getElementById('root')!).render(<App />)
 
 > 默认只捕获浏览器级错误。已被应用或框架自行捕获并吞掉的错误不在自动捕获范围内；控制台监听须显式开启。
 
-> 若页面配置了 CSP，需在 `connect-src` 中放行 `serverUrl`；自托管脚本时还需在 `script-src` 中放行脚本来源。
+> 若页面配置了 CSP，需在 `connect-src` 中放行 `serverUrl`；配置独立事件上报地址时，还需放行该地址的来源。自托管脚本时还需在 `script-src` 中放行脚本来源。
 
 ## ⚙️ API
 
@@ -143,14 +149,14 @@ createRoot(document.getElementById('root')!).render(<App />)
 | --- | --- | --- | --- |
 | `serverUrl` | `string` | ✅ | 服务根地址，保留 API 路径前缀；支持 HTTP 与 HTTPS，须为不含凭据、查询与片段的绝对地址。 |
 | `appId` | `string` | ✅ | 服务端分配的应用标识，2 至 64 位小写字母与数字，且两者混合。 |
-| `getContext` | `() => Record<string, unknown> \| Promise<Record<string, unknown>>` | ❌ | 浏览器错误事件的上下文回调，每个待处理错误发送前调用一次；控制台事件跳过回调；重复初始化时以最新传入为准。 |
-| `captureConsole` | `boolean \| readonly ConsoleLevel[]` | ❌ | 默认或 `false` 关闭；`true` 监听 `debug/info/warn/error` 四级；数组只监听指定级别，例如 `['debug', 'warn', 'error']`，空数组关闭。 |
+| `getContext` | `() => Record<string, unknown> \| Promise<Record<string, unknown>>` | ❌ | 服务端允许时在浏览器错误事件发送前调用；控制台事件跳过回调；重复初始化时以最新传入为准。 |
 
 返回值 `status`：
 
 | 状态 | 含义 |
 | --- | --- |
 | `allowed` | CID 已就绪且上报策略允许，SDK 已安装监听器并开始捕获。 |
+| `disabled` | 准入允许，但服务端配置关闭全部浏览器错误与控制台采集。 |
 | `denied` | 上报策略拒绝当前应用 / CID。 |
 | `invalid_config` | 初始化参数不合法，未发起请求。 |
 | `unavailable` | 运行环境缺少必要能力（如 Fetch、Web Crypto、可读写存储、监听器支持等），或选中的控制台方法无法包装；该状态不会与「仍在监控」并存，重复初始化遇到同样问题时 SDK 会先停止监控。 |
@@ -160,9 +166,9 @@ createRoot(document.getElementById('root')!).render(<App />)
 
 行为说明：
 
-- 同一 `serverUrl` 与 `appId` 视为同一监控目标。并发调用共用一次初始化；已允许后重复调用复用允许状态并更新 `getContext` 与 `captureConsole`；不同监控目标并发调用返回 `conflict`。若重复初始化时新的控制台级别无法生效，SDK 会停止监控并返回 `unavailable`，与首次初始化保持同一语义。
+- 同一 `serverUrl` 与 `appId` 视为同一监控目标。并发调用共用一次初始化；非并发重复调用会暂停旧采集并重新查询准入与配置，随后应用最新 `getContext`。不同监控目标在监控时或初始化过程中返回 `conflict`。
 - 停止后可再次初始化；已持久化的 CID 会按服务地址与应用隔离复用，且**不会通过初始化结果返回**。
-- 初始化会先确认运行环境能力，再签发 CID 与查询上报策略；无法监控时返回 `unavailable`，不会宣称已开始监控。
+- 初始化先确认协议基础能力，再签发 CID、查询准入和配置；按配置需要浏览器监听时检查监听能力。配置失败不会沿用旧配置或默认值，返回 `failed` 并停止采集。
 
 ### `stop()`
 
@@ -194,31 +200,25 @@ createRoot(document.getElementById('root')!).render(<App />)
 - 已被应用或框架吞掉的错误；
 - Shadow DOM 内部元素的资源加载错误；
 - 其他 iframe 与 Worker 中的错误；
-- 默认关闭的 `console.debug/info/warn/error` 监听；
+- 服务端未启用的 `console.debug/info/warn/error` 监听；
 - SDK 安装之前发生的错误；
 - 同一页面加载多份 SDK 副本；
 - Source Map 还原。
 
 其他边界：
 
-- 初始化之前、等待上报策略结果期间以及 `stop` 之后的错误不缓存、不上报；重复初始化不会重复注册监听器。
+- 初始化之前、等待准入及配置结果期间以及 `stop` 之后的错误不缓存、不上报；重复初始化会先卸载旧监听器，再安装新配置所需的监听器。
 - 资源元素错误通过捕获阶段取得；跨域脚本可能只提供受限信息或没有堆栈。
 - 事件风暴受加密准备与上报请求各 5 个并发上限约束，超出的事件在组装前丢弃。
 - 没有离线队列；页面关闭或断网时允许丢失事件。
 
-### 可选控制台监听
+### 服务端采集配置
 
-```ts
-await init({
-  serverUrl: 'https://collector.example/api-prefix',
-  appId: 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6',
-  captureConsole: ['debug', 'warn', 'error'],
-})
-```
+AppPulse 后台按 APPID 设置浏览器错误类型、控制台开关及级别、控制台可选字段（`name`、`stack`、`pagePath`）、环境字段、`getContext` 开关和完整事件上报地址。控制台采集默认关闭；协议必填的消息、级别和时间等字段不能关闭。管理员通过复选框多选错误类型、级别与字段。
 
-`captureConsole: true` 监听全部四级；数组可自由组合 `debug`、`info`、`warn`、`error`。只有服务端准入允许后才包装当前窗口的对应方法，原调用仍会照常执行。重复 `init` 可更新级别；`false` 或 `[]` 可关闭监听。选定方法无法包装时，初始化返回 `unavailable` 并停止监控（包括已允许后的重复初始化），可去掉或调整 `captureConsole` 后重新初始化。
+控制台输出经现有加密通道作为 `kind: 'other'` 和对应 `level` 上报。`name: 'console.<级别>'` 仅在配置启用该字段时附加。多参数按顺序组成消息；对象只读取有限的自有数据属性，不调用 getter 或 `toJSON`，循环引用和深层内容使用占位文本。控制台事件不调用 `getContext`，防止回调自身输出日志形成递归；环境字段按项目配置附加。输出可能包含密码、令牌或业务数据，请在后台确认采集范围后再开启。
 
-控制台输出经现有加密通道作为 `kind: 'other'`、对应 `level` 和 `name: 'console.<级别>'` 上报。多参数按顺序组成消息；对象只读取有限的自有数据属性，不调用 getter 或 `toJSON`，循环引用和深层内容使用占位文本。控制台事件不调用 `getContext`，防止回调自身输出日志形成递归；仍附加可获得的页面路径与浏览器环境信息。输出可能包含密码、令牌或业务数据，请在接入方确认日志内容后再开启。
+服务端可按项目关闭任意浏览器错误类型、只附加指定环境字段，或禁止调用接入方的 `getContext`。配置缺失时使用当前默认行为：五类浏览器错误与三个环境字段开启，允许 `getContext`，控制台关闭。独立事件地址可为 HTTP(S) 绝对地址；接收端必须适配相同的加密协议、CID 与准入规则，并允许接入页面跨域请求。
 
 监听仅覆盖安装之后当前窗口中经过这四个 `console` 方法的调用；不覆盖其他 iframe、Worker、浏览器自身输出或 `console.trace/table/group` 等方法。事件仍受并发与体积限制，断网、页面关闭或事件风暴时可能丢失，不能保证逐条完整收集。
 
@@ -269,13 +269,14 @@ await init({
 
 ### 请求接口
 
-所有请求都基于 `serverUrl`，并保留其路径前缀：
+初始化请求基于 `serverUrl` 并保留路径前缀；事件请求使用配置指定的完整地址，未指定时使用 `{serverUrl}/v1/events`：
 
 | 接口 | 用途 | 请求体 |
 | --- | --- | --- |
 | `POST {serverUrl}/v1/cids` | 签发 CID | `{ "appId": "..." }` |
 | `POST {serverUrl}/v1/admission` | 查询上报策略 | `{ "appId": "...", "cid": "..." }` |
-| `POST {serverUrl}/v1/events` | 上报加密事件 | 加密信封 |
+| `POST {serverUrl}/v1/config` | 查询 APPID 采集配置 | `{ "appId": "...", "cid": "..." }` |
+| `POST {eventUrl 或默认地址}` | 上报加密事件 | 加密信封 |
 
 ### 请求行为
 
@@ -295,7 +296,7 @@ await init({
 - 明文上限 32 KiB，完整信封上限 48 KiB；
 - 明文超限时依次移除 `context`、`environment`，仍超限再缩短堆栈。
 
-服务端会对每条事件再次校验上报策略，配置变更立即生效。
+AppPulse 接收端会对每条事件再次校验上报策略和采集配置；独立接收端需执行相同约束。配置变更在下一次 `init` 后影响 SDK 采集，AppPulse 接收端校验立即生效。配置不匹配时接收端返回 `CONFIG_REJECTED`，SDK 只丢弃该条事件、不停止采集；策略或 CID 拒绝仍返回 `NOT_ALLOWED` 并停止发送。
 
 ### 安全提示
 
@@ -306,7 +307,7 @@ await init({
 
 ## 🧱 运行要求与兼容性
 
-构建语法目标为 ES2019，但运行时能力会在初始化时逐项检测；缺少以下能力时 `init` 返回 `unavailable`，且不会签发 CID 或查询上报策略：
+构建语法目标为 ES2019。协议基础能力缺失时 `init` 返回 `unavailable`，不发起请求；浏览器监听能力和控制台方法在配置拉取后按启用的采集来源检查：
 
 | 能力 | 用途 |
 | --- | --- |
@@ -332,6 +333,7 @@ src/
 ├── context.ts      # getContext 调用、超时与上下文归一化
 ├── environment.ts  # 浏览器环境信息采集
 ├── request.ts      # 5 秒超时与有限重试的 JSON POST
+├── remote-config.ts # 服务端采集配置校验
 ├── base64url.ts    # base64url 编解码
 ├── safe-read.ts    # 宿主属性安全读取
 └── types/          # 公开类型声明
@@ -378,11 +380,11 @@ SDK 不发布到 npm，发布流程由 GitHub Actions 完成：
 2. 打 tag 并推送，tag 必须与版本号一致：
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
-3. [`.github/workflows/release.yml`](.github/workflows/release.yml) 会执行 `npm ci --ignore-scripts`、`npm run release:pack`（内部包含 `npm run check`）并创建 Release，附件为 `message-reporting-0.2.0.tgz`。
+3. [`.github/workflows/release.yml`](.github/workflows/release.yml) 会执行 `npm ci --ignore-scripts`、`npm run release:pack`（内部包含 `npm run check`）并创建 Release，附件为 `message-reporting-0.3.0.tgz`。
 4. 消费端按上文安装 URL 使用；IIFE 用户可从附件中取 `dist/index.global.js` 自托管。
 
 本地手动打包（不上传）：
@@ -404,7 +406,7 @@ npm run release:pack
 
 ## ⚠️ 当前状态
 
-- 当前版本 **0.2.0**。初始化、CID、上报策略、自动捕获、环境信息、自定义上下文、加密发送与多格式产物均已实现并有自动化测试覆盖。
+- 源码版本 **0.3.0**，尚未创建对应 Release。初始化、CID、上报策略、按 APPID 下发配置、自动捕获、环境信息、自定义上下文、加密发送与多格式产物均已实现并有自动化测试覆盖。
 - 真实浏览器矩阵、真实接收端联调、Vue / React 实际接入和生产部署验收尚未执行；首次接入建议先在测试环境完成「初始化 → 触发错误 → 接收端落库」的完整联调。
 - 首版没有离线队列、旧通道兼容层和 Source Map 还原能力；页面关闭或断网时允许丢失事件。
 - 分发方式为 GitHub Release tarball，不发布到 npm；Release 由 tag 触发的 GitHub Actions 生成。

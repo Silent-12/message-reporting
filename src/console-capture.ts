@@ -1,4 +1,4 @@
-import type { ConsoleLevel } from './types/index'
+import type { CONSOLE_FIELDS, EVENT_LEVELS } from './remote-config'
 import { pagePath } from './capture'
 import { canSendEvent, sendInternalEvent, type InternalEvent } from './event'
 import { readString } from './safe-read'
@@ -15,6 +15,11 @@ const MAX_PROPERTIES = 10
 const MAX_DEPTH = 2
 /** 单条控制台消息的字符上限，发送前仍按明文体积上限二次裁剪。 */
 const MAX_MESSAGE_CHARS = 8192
+
+/** 控制台采集支持的级别。 */
+type ConsoleLevel = (typeof EVENT_LEVELS)[number]
+/** 控制台事件允许附加的字段。 */
+type ConsoleField = (typeof CONSOLE_FIELDS)[number]
 
 /**
  * 已安装的控制台方法
@@ -116,11 +121,12 @@ function restore(entry: InstalledMethod): void {
 /**
  * 按级别安装或更新控制台包装
  * @description 只在当前窗口的对应方法可写时安装；任一方法安装失败时回滚本次新增的包装并保留原有状态，
- * 不在目标级别中的旧包装会被还原，级别为空时全部停用
+ * 不在目标级别中的旧包装会被还原，级别为空时全部停用；可选字段仅影响事件内容，不影响包装结果
  * @param levels 需要监听的级别
+ * @param fields 控制台事件允许附加的可选字段
  * @returns 是否已达成期望的安装状态
  */
-export function configureConsoleCapture(levels: readonly ConsoleLevel[]): boolean {
+export function configureConsoleCapture(levels: readonly ConsoleLevel[], fields: readonly ConsoleField[]): boolean {
   const desired = new Set(levels)
   if (desired.size === 0) {
     uninstallConsoleCapture()
@@ -155,16 +161,20 @@ export function configureConsoleCapture(levels: readonly ConsoleLevel[]): boolea
             const input: InternalEvent = {
               kind: 'other',
               level,
-              name: `console.${level}`,
               message: messageFrom(args),
               occurredAt: Date.now(),
               skipContext: true,
             }
-            const path = pagePath(win)
-            if (path !== undefined) input.pagePath = path
-            const error = args.find((arg) => arg instanceof Error)
-            const stack = readString(error, 'stack')
-            if (stack !== undefined) input.stack = stack
+            if (fields.includes('name')) input.name = `console.${level}`
+            if (fields.includes('pagePath')) {
+              const path = pagePath(win)
+              if (path !== undefined) input.pagePath = path
+            }
+            if (fields.includes('stack')) {
+              const error = args.find((arg) => arg instanceof Error)
+              const stack = readString(error, 'stack')
+              if (stack !== undefined) input.stack = stack
+            }
             void sendInternalEvent(input).catch(() => {})
           } catch {
             // 控制台采集失败不得改变宿主调用结果。

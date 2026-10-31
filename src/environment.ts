@@ -1,3 +1,4 @@
+import { ENVIRONMENT_FIELDS } from './remote-config'
 import { readField, readString } from './safe-read'
 
 /**
@@ -17,16 +18,24 @@ export interface Environment {
  * 从当前运行时读取环境信息
  * @description 仅读取 `navigator.userAgent`、`navigator.onLine` 与 `navigator.connection.effectiveType`，
  * 任一属性缺失、为空或读取抛错时省略对应字段；浏览器未提供网络信息 API 时不推断网络类型
+ * @param fields 服务端允许采集的环境字段
  * @returns 至少含一个字段的环境信息；全部缺失时返回 undefined
  */
-export function readEnvironment(): Environment | undefined {
+export function readEnvironment(fields: readonly (keyof Environment)[] = ENVIRONMENT_FIELDS): Environment | undefined {
+  if (fields.length === 0) return undefined
   const navigator = readField(globalThis, 'navigator')
-  const userAgent = readString(navigator, 'userAgent')
-  const online = readField(navigator, 'onLine')
-  const effectiveType = readString(readField(navigator, 'connection'), 'effectiveType')
   const environment: Environment = {}
-  if (userAgent !== undefined) environment.userAgent = userAgent
-  if (typeof online === 'boolean') environment.online = online
-  if (effectiveType !== undefined) environment.effectiveType = effectiveType
+  if (fields.includes('userAgent')) {
+    const userAgent = readString(navigator, 'userAgent')
+    if (userAgent !== undefined) environment.userAgent = userAgent
+  }
+  if (fields.includes('online')) {
+    const online = readField(navigator, 'onLine')
+    if (typeof online === 'boolean') environment.online = online
+  }
+  if (fields.includes('effectiveType')) {
+    const effectiveType = readString(readField(navigator, 'connection'), 'effectiveType')
+    if (effectiveType !== undefined) environment.effectiveType = effectiveType
+  }
   return Object.keys(environment).length ? environment : undefined
 }

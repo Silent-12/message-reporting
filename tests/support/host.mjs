@@ -6,6 +6,15 @@ export const cid = Buffer.alloc(32, 42).toString('base64url')
 /** 测试使用的初始化配置。 */
 export const opts = { serverUrl: 'https://example.test/prefix', appId: 'project1' }
 
+/** 测试服务端下发的默认采集配置。 */
+export const defaultConfig = () => ({
+  eventUrl: null,
+  browserKinds: ['javascript', 'unhandledrejection', 'img', 'script', 'resource'],
+  console: { enabled: false, levels: [], fields: ['name', 'stack', 'pagePath'] },
+  environmentFields: ['userAgent', 'online', 'effectiveType'],
+  contextEnabled: true,
+})
+
 /**
  * 构造统一响应
  * @param data 响应 data 字段
@@ -39,9 +48,15 @@ function defineHost(key, value) {
  * @param options.navigator 模拟的 navigator，默认含浏览器 UA、在线状态与网络类型
  * @returns 宿主状态：entries、requests、listeners、addCalls、removeCalls、win、navigator、dispatch 与 events
  */
-export function installHost({ allowed = true, handler, navigator = { userAgent: 'TestBrowser/1.0', onLine: true, connection: { effectiveType: '4g' } } } = {}) {
+export function installHost({
+  allowed = true,
+  config = defaultConfig(),
+  handler,
+  navigator = { userAgent: 'TestBrowser/1.0', onLine: true, connection: { effectiveType: '4g' } },
+} = {}) {
   const state = {
     allowed,
+    config,
     handler: handler ?? (() => envelope(null)),
     entries: new Map(),
     requests: [],
@@ -78,6 +93,7 @@ export function installHost({ allowed = true, handler, navigator = { userAgent: 
     state.requests.push({ url, options })
     if (url.endsWith('/cids')) return Promise.resolve(envelope({ cid }))
     if (url.endsWith('/admission')) return Promise.resolve(envelope({ allowed: state.allowed }))
+    if (url.endsWith('/config')) return Promise.resolve(envelope(state.config))
     return Promise.resolve(state.handler(url, options))
   }
   globalThis.fetch = (url, options) => state.fetch(url, options)
